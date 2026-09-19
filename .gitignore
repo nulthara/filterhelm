@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Runtime state — instances.yml, secrets, audit log. Never committed:
+# per-deployment data, and instances.yml sits alongside credentials on disk.
+/data/
+.env
+
+# Frontend dependencies and TypeScript incremental-build metadata. The built
+# app/static/ui assets are committed because the deployment target is Python-only.
+frontend/node_modules/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+#local settings for keys and such
+.claude/settings.local.json
+before_public.md
+.private-denylist.toml

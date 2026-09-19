@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pihole-manager"
+version = "0.1.0"
+description = "Local GUI for managing multiple Pi-hole instances"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.141.1",
+    "starlette==1.6.0",
+    "uvicorn==0.52.4",
+    "pyyaml==6.0.3",
+    "httpx==0.28.1",
+    "keyring==25.7.0",
+    "argon2-cffi==25.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

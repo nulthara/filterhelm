@@ -1,0 +1,53 @@
+# Deploys to the host this runner lives on — see docs/deploy.md.
+#
+# Deliberately no actions/checkout and no marketplace actions: the runner
+# executes directly on the deploy target (docs/deploy.md's "runner IS the
+# target" choice), so a plain `git fetch` + `reset --hard` in-place is both
+# simpler and avoids needing Node.js on the runner just to run a JS action.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    # Matches the label this repo's runner registers with — see docs/deploy.md
+    # §2. Not a generic "self-hosted" label: this runner is dedicated to this
+    # one repo/target, and the label makes that explicit rather than implicit.
+    runs-on: pihole-manager-deploy
+
+    steps:
+      - name: Pull latest main
+        run: |
+          set -eu
+          cd /opt/pihole-manager
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Install dependencies
+        run: |
+          set -eu
+          cd /opt/pihole-manager
+          ./.venv/bin/pip install -r requirements.lock
+          ./.venv/bin/pip install --no-deps --no-build-isolation -e .
+
+      - name: Restart service
+        # Must exactly match /etc/sudoers.d/gitea-runner-pihole-manager.
+        run: sudo systemctl restart pihole-manager.service
+
+      - name: Confirm it came back up
+        run: |
+          set -eu
+          # The service account's sudoers rule only allows this one restart
+          # command (docs/deploy.md §4) — a failed restart would otherwise
+          # look identical to a slow-starting one, so check rather than assume.
+          for i in $(seq 1 10); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8420/api/auth/status; then
+              echo "up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "pihole-manager did not come back up after restart" >&2
+          exit 1

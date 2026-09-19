@@ -1,0 +1,59 @@
+:root {
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1f1f1f;
+  background: #f5f5f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+.app-shell { min-height: 100vh; }
+.app-header { display: flex; align-items: center; gap: 12px; padding-inline: 24px; }
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: #fff;
+  background: #1677ff;
+  font-size: 20px;
+  font-weight: 700;
+}
+.brand-title.ant-typography { color: #fff; margin: 0; }
+.app-content { padding: 32px; overflow: auto; }
+.auth-content { display: grid; place-items: start center; padding: 64px 20px; }
+.auth-card { width: min(440px, 100%); }
+.auth-actions { margin-left: auto; }
+.auth-user { color: #fff; }
+.logout-button { font-weight: 600; }
+.page-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 24px; }
+.page-heading .ant-typography { margin-top: 0; }
+.instance-select { width: 240px; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+.safety-alert { margin-bottom: 24px; }
+.modal-note { margin-top: 16px; }
+.dns-error { margin-bottom: 16px; }
+.dns-table-tools { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.dns-search { width: min(420px, 100%); }
+.status-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+
+.bulk-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; padding: 8px 12px; border-radius: 8px; background: rgba(22, 119, 255, 0.08); }
+
+.query-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 8px; }
+.query-filters .ant-input-affix-wrapper, .query-filters .ant-select { min-width: 180px; }
+.query-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.query-top-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+@media (max-width: 767px) {
+  .query-filters { flex-direction: column; align-items: stretch; }
+  .query-top-pair { grid-template-columns: 1fr; }
+  .app-content { padding: 20px 16px; }
+  .page-heading { flex-direction: column; }
+  .instance-select { width: 100%; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .bulk-bar { flex-direction: column; align-items: flex-start; }
+  .dns-table-tools { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .status-actions { align-items: flex-start; flex-direction: column; }
+}
