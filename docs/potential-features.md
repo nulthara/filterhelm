@@ -17,7 +17,8 @@ invariants") it brushes up against, if any.
 
 - Instance health column with uptime, memory, load, CPU, temperature, FTL usage,
   and database size — plan 0015 (design.md §5.1); status dot with
-  fixed thresholds and a collapsible detail row — plan 0017.
+  fixed thresholds and a collapsible detail row — plan 0017; the detail row now
+  opens only for a warning or critical instance — plan 0018.
 
 - Cross-instance query log with window, status, domain, and client filters, plus
   24-hour per-instance counters, top domains, top clients, and upstreams —
@@ -141,15 +142,6 @@ Instances version check.
   mutation safety and is well covered (326 tests).
 
 ## 6. Bugs / papercuts noticed in use
-
-- **The Instances health detail row should start collapsed, not expanded.** Plan 0017
-  specified expand-by-default and the code does exactly that, so this is a preference
-  reversal after seeing it live rather than a defect — the table is taller than it needs
-  to be when every instance is open. The fix is small and local to
-  `InstancesPage.tsx`: invert the `collapsed` set into an `expanded` set seeded empty, so
-  `expandedRowKeys` starts as `[]` and `onExpand` adds rather than removes. Worth doing
-  in a cleanup pass, and worth deciding at the same time whether an unhealthy instance
-  should auto-expand so a warning or critical dot is not hiding its own reasons.
 
 - **`_adlist_key` is not injective, so a bulk or single-record action can hit the
   wrong block list.** `_adlist_key` (`app/routes/api.py:141`) reads `parsed.hostname`,

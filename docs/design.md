@@ -110,7 +110,9 @@ building carefully rather than reaching for another off-the-shelf syncer:
   The row shows a status dot (healthy / warning / critical / unavailable) computed
   server-side from temperature against Pi-hole's `hot_limit`, RAM percent, swap
   percent, and 1-minute load per core with fixed thresholds. The numbers sit in a
-  collapsible detail row under each instance, open by default.
+  collapsible detail row under each instance. A warning or critical instance opens
+  its detail row automatically; a healthy one starts collapsed. Expanding or
+  collapsing a row overrides that default for the rest of the session.
 - A dedicated status view shows the current blocking state and remaining
   pause timer. Blocking can be paused for 10 seconds, 30 seconds, 5 minutes,
   or indefinitely and resumed for one instance or a selected group. Group

@@ -163,13 +163,18 @@ asserts on expansion state, so any *new* failure means something outside this pl
 list moved. The behaviour is covered by the manual checks in Acceptance criteria.
 
 **Known pre-existing false positive, do not fix here.** On `main` today,
-`tests/test_repo_hygiene.py::test_tracked_files_carry_no_known_private_tokens` fails with
-`LICENSE:3: personal domain: nulthara`. That is the repo owner's public handle in a
-GitHub-generated MIT copyright line, not a private domain reference — the `personal domain`
-pattern in the local, gitignored `.private-denylist.toml` is simply too broad. The baseline
-is **519 passed, 1 failed**. Codex must reproduce that same single failure and no other,
+`tests/test_repo_hygiene.py::test_tracked_files_carry_no_known_private_tokens` reports one
+`personal domain` finding against `LICENSE:3`. That line is the repo owner's public GitHub
+handle in a GitHub-generated MIT copyright notice, not a private domain reference — the
+`personal domain` pattern in the local, gitignored `.private-denylist.toml` matches the
+bare handle instead of requiring a domain suffix. The baseline is **519 passed, 1 failed**
+with that single `LICENSE` finding. Codex must reproduce exactly that and no other finding,
 and must not touch `LICENSE`, `.private-denylist.toml`, or `tests/test_repo_hygiene.py`;
 narrowing the pattern is a local config change outside this plan.
+
+This paragraph deliberately does not spell the handle out. The hygiene test scans every
+tracked file, so a plan that quotes the token becomes a second finding once committed and
+masks the baseline it is trying to describe.
 
 ## Invariants at risk
 
