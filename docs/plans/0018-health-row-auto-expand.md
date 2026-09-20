@@ -1,6 +1,6 @@
 # 0018 — Health detail row opens only when unhealthy
 
-Status: in-progress          <!-- draft | approved | in-progress | in-review | shipped -->
+Status: approved          <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0018-health-row-auto-expand
 Author: Claude (Architect)
 Date: 2026-09-19
@@ -37,8 +37,8 @@ Out:
 - Suppressing the badge tooltip on an expanded row, even though its reasons then duplicate
   the `Alert`.
 - Adding a frontend test runner (`docs/potential-features.md` §5 tracks that separately).
-- The pre-existing `test_repo_hygiene` failure over the `LICENSE` copyright line. See
-  Tests — it is the baseline, not a regression, and fixing it is a separate decision.
+- The `test_repo_hygiene` false positive over the `LICENSE` copyright line. See
+  Tests — it was resolved by a local config change outside this branch.
 - `README.md` — it describes the status dot and the thresholds but never the detail row,
   so nothing there goes stale.
 
@@ -162,19 +162,19 @@ here). `./.venv/bin/pytest` must come back unchanged as a regression check — n
 asserts on expansion state, so any *new* failure means something outside this plan's Files
 list moved. The behaviour is covered by the manual checks in Acceptance criteria.
 
-**Known pre-existing false positive, do not fix here.** On `main` today,
-`tests/test_repo_hygiene.py::test_tracked_files_carry_no_known_private_tokens` reports one
-`personal domain` finding against `LICENSE:3`. That line is the repo owner's public GitHub
-handle in a GitHub-generated MIT copyright notice, not a private domain reference — the
-`personal domain` pattern in the local, gitignored `.private-denylist.toml` matches the
-bare handle instead of requiring a domain suffix. The baseline is **519 passed, 1 failed**
-with that single `LICENSE` finding. Codex must reproduce exactly that and no other finding,
-and must not touch `LICENSE`, `.private-denylist.toml`, or `tests/test_repo_hygiene.py`;
-narrowing the pattern is a local config change outside this plan.
+**Resolved during implementation.** While this plan was in flight the baseline was
+**519 passed, 1 failed** — `tests/test_repo_hygiene.py::test_tracked_files_carry_no_known_private_tokens`
+reported a `personal domain` finding against `LICENSE:3`, the repo owner's public GitHub
+handle in a GitHub-generated MIT copyright notice. The `personal domain` pattern in the
+local, gitignored `.private-denylist.toml` matched the bare handle rather than requiring a
+domain suffix. The user narrowed that pattern to require a domain suffix, which clears
+`LICENSE` while still catching real host references. **The suite is now 520 passed, 0
+failed**, and that is the bar for this branch.
 
 This paragraph deliberately does not spell the handle out. The hygiene test scans every
 tracked file, so a plan that quotes the token becomes a second finding once committed and
-masks the baseline it is trying to describe.
+masks the baseline it is trying to describe — which is exactly what happened on the first
+Codex run here, and correctly blocked its acceptance check.
 
 ## Invariants at risk
 
@@ -197,9 +197,8 @@ masks the baseline it is trying to describe.
 
 ## Acceptance criteria
 
-- [ ] `./.venv/bin/pytest` returns 519 passed, 1 failed — the same pre-existing
-      `test_tracked_files_carry_no_known_private_tokens` failure described in Tests, and
-      nothing else.
+- [ ] `./.venv/bin/pytest` green — 520 passed, 0 failed. See Tests for the hygiene-test
+      false positive that was resolved mid-flight.
 - [ ] `cd frontend && npm run build && npm run lint` clean (the pre-existing `App.tsx` hook
       warning may remain); `app/static/ui/` committed.
 - [ ] On first load, a healthy instance shows the dot with its row collapsed and the
