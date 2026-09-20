@@ -86,7 +86,7 @@ function HealthDetails({ health }: HealthDetailsProps) {
 export default function InstancesPage() {
   const { message } = App.useApp()
   const [instances, setInstances] = useState<Instance[]>([])
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [expandOverrides, setExpandOverrides] = useState<Map<string, boolean>>(new Map())
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Instance>()
@@ -188,8 +188,9 @@ export default function InstancesPage() {
     }
   }
 
-  const expandedRowKeys = instances.filter((item) => item.health !== null &&
-    !collapsed.has(item.name)).map((item) => item.name)
+  const isExpanded = (item: Instance) => item.health !== null &&
+    (expandOverrides.get(item.name) ?? item.health.status !== 'healthy')
+  const expandedRowKeys = instances.filter(isExpanded).map((item) => item.name)
 
   const columns: TableProps<Instance>['columns'] = [
     { title: 'Name', dataIndex: 'name', key: 'name', render: (value) => <Typography.Text strong>{value}</Typography.Text> },
@@ -275,10 +276,9 @@ export default function InstancesPage() {
           expandedRowKeys,
           rowExpandable: (item) => item.health !== null,
           expandedRowRender: (item) => item.health ? <HealthDetails health={item.health} /> : null,
-          onExpand: (expanded, item) => setCollapsed((current) => {
-            const next = new Set(current)
-            if (expanded) next.delete(item.name)
-            else next.add(item.name)
+          onExpand: (expanded, item) => setExpandOverrides((current) => {
+            const next = new Map(current)
+            next.set(item.name, expanded)
             return next
           }),
         }}
