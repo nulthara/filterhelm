@@ -259,7 +259,8 @@ Category cards show drifting / total counts and filter the table by category.
 State (All / Missing / Differs) and text filters narrow the rows, with one value
 column per reachable instance. Only drifting entries cross the wire, capped at
 200 per category; counts remain exact and capped categories are identified.
-Refresh is explicit, with no polling, mutation, reconciliation, or row navigation.
+Refresh is explicit, with no polling, mutation, or reconciliation; each row links to its
+owning page, with CNAME rows opening the CNAME records tab.
 
 States match the owning pages: conflict outranks missing; DNS compares addresses,
 CNAMEs compare target and TTL, block lists/domains/groups compare presence and

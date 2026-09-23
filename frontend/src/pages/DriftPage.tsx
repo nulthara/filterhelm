@@ -1,10 +1,30 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { ReloadOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Card, Col, Empty, Input, Row, Segmented, Space, Statistic, Table, Tag, Typography } from 'antd'
 import type { TableProps } from 'antd'
 import { api, type DriftCategory, type DriftItem, type DriftResponse, type DriftState } from '../api'
+import type { DNSTab } from './DNSPage'
 
-export default function DriftPage() {
+export interface DriftTarget {
+  page: 'dns' | 'adlists' | 'domains' | 'groups' | 'clients' | 'settings'
+  dnsTab?: DNSTab
+}
+
+interface DriftPageProps {
+  onNavigate: (target: DriftTarget) => void
+}
+
+const DESTINATIONS: Record<DriftCategory, { target: DriftTarget; label: string }> = {
+  dns: { target: { page: 'dns', dnsTab: 'hosts' }, label: 'Local DNS' },
+  cname: { target: { page: 'dns', dnsTab: 'cnames' }, label: 'Local DNS › CNAME' },
+  adlist: { target: { page: 'adlists' }, label: 'Block Lists' },
+  domain: { target: { page: 'domains' }, label: 'Domains' },
+  group: { target: { page: 'groups' }, label: 'Groups' },
+  client: { target: { page: 'clients' }, label: 'Clients' },
+  setting: { target: { page: 'settings' }, label: 'Settings' },
+}
+
+export default function DriftPage({ onNavigate }: DriftPageProps) {
   const { message } = App.useApp()
   const [data, setData] = useState<DriftResponse>()
   const [loading, setLoading] = useState(false)
@@ -63,6 +83,7 @@ export default function DriftPage() {
     },
     { title: 'State', key: 'state', render: (_, item) => item.state === 'conflict' ? <Tag color="orange">Differs</Tag> : <Tag color="blue">Missing</Tag> },
     ...instanceColumns,
+    { title: 'Fix in', key: 'open', render: (_, item) => <Button type="link" size="small" icon={<ArrowRightOutlined />} onClick={() => onNavigate(DESTINATIONS[item.category].target)}>{DESTINATIONS[item.category].label}</Button> },
   ]
   const truncated = data?.categories.filter((summary) => summary.truncated) ?? []
   const emptyText = data?.comparable && data.items.length === 0

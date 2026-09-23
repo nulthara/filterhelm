@@ -17,7 +17,7 @@ invariants") it brushes up against, if any.
 
 - Unified drift dashboard across Local DNS, CNAMEs, block lists, domains, groups,
   clients, and managed settings, with category counts and drift filters —
-  plan 0020 (design.md §5.10).
+  plan 0020 (design.md §5.10); rows link to the owning page — plan 0021.
 
 - Instance health column with uptime, memory, load, CPU, temperature, FTL usage,
   and database size — plan 0015 (design.md §5.1); status dot with

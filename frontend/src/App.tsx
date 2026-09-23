@@ -3,7 +3,7 @@ import { DashboardOutlined, DiffOutlined, DatabaseOutlined, DesktopOutlined, Fil
 import { Alert, App as AntApp, Button, Card, Form, Input, Layout, Menu, Skeleton, Space, Tooltip, Typography } from 'antd'
 import InstancesPage from './pages/InstancesPage'
 import SettingsPage from './pages/SettingsPage'
-import DNSPage from './pages/DNSPage'
+import DNSPage, { type DNSTab } from './pages/DNSPage'
 import StatusPage from './pages/StatusPage'
 import AdlistsPage from './pages/AdlistsPage'
 import DomainsPage from './pages/DomainsPage'
@@ -11,7 +11,7 @@ import GroupsPage from './pages/GroupsPage'
 import ClientsPage from './pages/ClientsPage'
 import LookupPage from './pages/LookupPage'
 import QueriesPage from './pages/QueriesPage'
-import DriftPage from './pages/DriftPage'
+import DriftPage, { type DriftTarget } from './pages/DriftPage'
 import { api, type AuthStatus } from './api'
 
 const { Header, Sider, Content } = Layout
@@ -19,10 +19,13 @@ const { Header, Sider, Content } = Layout
 export default function App() {
   const { message } = AntApp.useApp()
   const [page, setPage] = useState('status')
+  const [dnsTab, setDnsTab] = useState<DNSTab>('hosts')
   const [auth, setAuth] = useState<AuthStatus>()
   const [authError, setAuthError] = useState<string>()
   const [loggingIn, setLoggingIn] = useState(false)
   const [loginForm] = Form.useForm<{ username: string; password: string }>()
+
+  const openFromDrift = (target: DriftTarget) => { setDnsTab(target.dnsTab ?? 'hosts'); setPage(target.page) }
 
   const refreshAuth = () => api.authStatus().then(setAuth).catch((error) => setAuthError(error instanceof Error ? error.message : 'Unable to check authentication'))
   useEffect(() => { void refreshAuth() }, [])
@@ -106,7 +109,7 @@ export default function App() {
             theme="dark"
             mode="inline"
             selectedKeys={[page]}
-            onClick={({ key }) => setPage(key)}
+            onClick={({ key }) => { setDnsTab('hosts'); setPage(key) }}
             items={[
               { key: 'status', icon: <DashboardOutlined />, label: 'Status' },
               { key: 'queries', icon: <HistoryOutlined />, label: 'Queries' },
@@ -123,7 +126,7 @@ export default function App() {
           />
         </Sider>
         <Content className="app-content">
-          {page === 'status' ? <StatusPage /> : page === 'queries' ? <QueriesPage /> : page === 'drift' ? <DriftPage /> : page === 'instances' ? <InstancesPage /> : page === 'dns' ? <DNSPage /> : page === 'domains' ? <DomainsPage /> : page === 'lookup' ? <LookupPage /> : page === 'adlists' ? <AdlistsPage /> : page === 'groups' ? <GroupsPage /> : page === 'clients' ? <ClientsPage /> : <SettingsPage />}
+          {page === 'status' ? <StatusPage /> : page === 'queries' ? <QueriesPage /> : page === 'drift' ? <DriftPage onNavigate={openFromDrift} /> : page === 'instances' ? <InstancesPage /> : page === 'dns' ? <DNSPage key={dnsTab} initialTab={dnsTab} /> : page === 'domains' ? <DomainsPage /> : page === 'lookup' ? <LookupPage /> : page === 'adlists' ? <AdlistsPage /> : page === 'groups' ? <GroupsPage /> : page === 'clients' ? <ClientsPage /> : <SettingsPage />}
         </Content>
       </Layout>
     </Layout>
