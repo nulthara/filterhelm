@@ -250,6 +250,31 @@ building carefully rather than reaching for another off-the-shelf syncer:
 
 ---
 
+### 5.10 Drift dashboard
+
+The read-only Drift screen aggregates Local DNS A/AAAA, CNAME records, block-list
+definitions, domains, groups, clients, and the four managed settings in one
+`GET /api/drift` request. Each instance uses one session with five sequential
+reads; DNS, CNAMEs, and settings share a single config-tree fetch.
+
+Category cards show drifting / total counts and filter the table by category.
+State (All / Missing / Differs) and text filters narrow the rows, with one value
+column per reachable instance. Only drifting entries cross the wire, capped at
+200 per category; counts remain exact and capped categories are identified.
+Refresh is explicit, with no polling, mutation, reconciliation, or row navigation.
+
+States match the owning pages: conflict outranks missing; DNS compares addresses,
+CNAMEs compare target and TTL, block lists/domains/groups compare presence and
+enabled state, and clients compare presence only. Block lists retain raw address
+keys. Comments and group assignments are not compared. Settings compare raw
+values, including list order; display strings are presentation only. Unset values
+show “(not set)” and empty displays show “(empty)”.
+
+An instance must answer all five reads to participate. Any failed read excludes
+its entire snapshot and shows an error. Missing means absent on a reachable
+instance, never unknown on an unreachable one. Fewer than two reachable
+instances produces a warning; single-instance self-conflicts still appear.
+
 ## 6. Non-functional requirements
 
 - **Local only.** Binds to localhost/loopback if it runs as a local web
