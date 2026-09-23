@@ -1,6 +1,6 @@
 # 0021 — Drift rows link to the owning page
 
-Status: in-progress               <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped               <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0021-drift-row-links
 Author: Claude (architect)
 Date: 2026-09-23
