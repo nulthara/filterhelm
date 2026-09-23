@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { DashboardOutlined, DatabaseOutlined, DesktopOutlined, FileSearchOutlined, FilterOutlined, GlobalOutlined, HistoryOutlined, LogoutOutlined, SettingOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { DashboardOutlined, DiffOutlined, DatabaseOutlined, DesktopOutlined, FileSearchOutlined, FilterOutlined, GlobalOutlined, HistoryOutlined, LogoutOutlined, SettingOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import { Alert, App as AntApp, Button, Card, Form, Input, Layout, Menu, Skeleton, Space, Tooltip, Typography } from 'antd'
 import InstancesPage from './pages/InstancesPage'
 import SettingsPage from './pages/SettingsPage'
@@ -11,6 +11,7 @@ import GroupsPage from './pages/GroupsPage'
 import ClientsPage from './pages/ClientsPage'
 import LookupPage from './pages/LookupPage'
 import QueriesPage from './pages/QueriesPage'
+import DriftPage from './pages/DriftPage'
 import { api, type AuthStatus } from './api'
 
 const { Header, Sider, Content } = Layout
@@ -109,6 +110,7 @@ export default function App() {
             items={[
               { key: 'status', icon: <DashboardOutlined />, label: 'Status' },
               { key: 'queries', icon: <HistoryOutlined />, label: 'Queries' },
+              { key: 'drift', icon: <DiffOutlined />, label: 'Drift' },
               { key: 'instances', icon: <DatabaseOutlined />, label: 'Instances' },
               { key: 'dns', icon: <GlobalOutlined />, label: 'Local DNS' },
               { key: 'domains', icon: <FilterOutlined />, label: 'Domains' },
@@ -121,7 +123,7 @@ export default function App() {
           />
         </Sider>
         <Content className="app-content">
-          {page === 'status' ? <StatusPage /> : page === 'queries' ? <QueriesPage /> : page === 'instances' ? <InstancesPage /> : page === 'dns' ? <DNSPage /> : page === 'domains' ? <DomainsPage /> : page === 'lookup' ? <LookupPage /> : page === 'adlists' ? <AdlistsPage /> : page === 'groups' ? <GroupsPage /> : page === 'clients' ? <ClientsPage /> : <SettingsPage />}
+          {page === 'status' ? <StatusPage /> : page === 'queries' ? <QueriesPage /> : page === 'drift' ? <DriftPage /> : page === 'instances' ? <InstancesPage /> : page === 'dns' ? <DNSPage /> : page === 'domains' ? <DomainsPage /> : page === 'lookup' ? <LookupPage /> : page === 'adlists' ? <AdlistsPage /> : page === 'groups' ? <GroupsPage /> : page === 'clients' ? <ClientsPage /> : <SettingsPage />}
         </Content>
       </Layout>
     </Layout>

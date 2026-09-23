@@ -469,7 +469,37 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export type DriftCategory = 'dns' | 'cname' | 'adlist' | 'domain' | 'group' | 'client' | 'setting'
+export type DriftState = 'missing' | 'conflict'
+
+export interface DriftCategorySummary {
+  category: DriftCategory
+  label: string
+  total: number
+  drifting: number
+  truncated: boolean
+}
+
+export interface DriftItem {
+  id: string
+  category: DriftCategory
+  key: string
+  detail: string
+  state: DriftState
+  values: Record<string, string | null>
+}
+
+export interface DriftResponse {
+  instance_names: string[]
+  reachable: string[]
+  comparable: boolean
+  errors: Record<string, string>
+  categories: DriftCategorySummary[]
+  items: DriftItem[]
+}
+
 export const api = {
+  drift: (signal?: AbortSignal) => request<DriftResponse>('/api/drift', { signal }),
   queryLog: (filters: QueryLogFilters, signal?: AbortSignal) => {
     const params = new URLSearchParams({
       window: String(filters.window),

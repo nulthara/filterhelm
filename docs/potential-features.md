@@ -15,6 +15,10 @@ invariants") it brushes up against, if any.
 
 **Shipped since these notes were first written** (moved out of the backlog):
 
+- Unified drift dashboard across Local DNS, CNAMEs, block lists, domains, groups,
+  clients, and managed settings, with category counts and drift filters —
+  plan 0020 (design.md §5.10).
+
 - Instance health column with uptime, memory, load, CPU, temperature, FTL usage,
   and database size — plan 0015 (design.md §5.1); status dot with
   fixed thresholds and a collapsible detail row — plan 0017; the detail row now
@@ -75,11 +79,6 @@ Instances version check.
   action, not a mutation — useful disaster-recovery insurance independent
   of anything this app manages directly, and doesn't touch the diff-before-
   write path since there's nothing to diff.
-- **Unified drift dashboard.** Local DNS and adlists already surface
-  missing/conflict indicators inline (§5.2, §5.3). A dedicated page rolling
-  those up across DNS, adlists, domains, groups, and settings into one
-  "here's everywhere pihole1 and pihole2 disagree" view would be pure
-  aggregation of data these pages already fetch.
 - **In-app audit log viewer.** The audit log (README "Request integrity"
   section) is a private file today, readable only by grepping on the host.
   A filterable read view in Settings would surface it without a new write
