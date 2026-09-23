@@ -150,11 +150,21 @@ told the cross-instance answer is unavailable.
    | `domain` | domain | `f"{type} · {kind}"` | `Enabled` / `Disabled` | `{enabled}` |
    | `group` | group name | comment, truncated to 80 chars | `Enabled` / `Disabled` | `{enabled}` |
    | `client` | client identifier | `""` | `Present` | empty — presence only |
-   | `setting` | dotted key | the `MANAGED_FIELDS` label | `_setting_display(value, kind)` | `{value}` rendered to its display string |
+   | `setting` | dotted key | the `MANAGED_FIELDS` label | `_setting_display(value, kind)` | `{_hashable(raw value)}` |
 
-   `_setting_display(value, kind)` returns `"(not set)"` for `None`, otherwise
-   `display_setting(value, kind)`. Settings compare the raw value with `!=`, matching
-   `_changes` in `api.py`, so reordered `dns.upstreams` counts as drift.
+   **The raw value decides drift; the display string is presentation only.** Settings compare
+   the value `get_setting` returns, matching `_changes` in `api.py`, so reordered
+   `dns.upstreams` counts as drift. A raw list is unhashable, so the conflict set is built
+   through `_hashable(value)`, which returns `tuple(value)` for a list and `value` otherwise.
+   No other category needs it — addresses are strings, CNAMEs are `(target, ttl)` tuples,
+   and the rest are bools.
+
+   `_setting_display(value, kind)` returns `"(not set)"` for `None`, `"(empty)"` when
+   `display_setting` renders to an empty string, and `display_setting(value, kind)` otherwise.
+   Two raw values can still render identically — `[]` and `[""]` both display as `"(empty)"` —
+   in which case the row is reported as a `conflict` with two identical-looking cells. That is
+   deliberate: silently under-reporting drift is worse than a rare puzzling row, and the user
+   can open Settings on each instance to see the difference.
 
    Item `id` is `f"{category}:{key}"`, except `domain`, which is
    `f"domain:{type}:{kind}:{domain}"` because the Domains page keys on all three.
@@ -322,9 +332,13 @@ domains, groups, and clients, a `fail` map, and a `calls` log recording
   assumed.
 - `test_drift_dns_hostname_with_two_addresses_on_one_instance_is_a_conflict` — pins the
   inherited quirk so a future refactor cannot change it silently.
-- `test_drift_settings_conflict_uses_display_strings` — `dns.upstreams` differing yields a
-  `setting` item whose `values` are the comma-joined display strings; identical upstreams
-  yield none; a `None` value renders `"(not set)"`.
+- `test_drift_settings_compare_raw_values_and_render_display_strings` — `dns.upstreams`
+  differing yields a `setting` item whose `values` are the comma-joined display strings;
+  identical upstreams yield none; reordered upstreams yield a conflict; a `None` value renders
+  `"(not set)"` and an empty list renders `"(empty)"`.
+- `test_drift_settings_conflict_on_raw_values_that_display_identically` — `[]` on one instance
+  and `[""]` on the other is a `conflict`, pinning that the raw value decides and the display
+  string does not.
 - `test_drift_unreachable_instance_is_reported_and_not_counted_as_missing` — `pihole2` raises;
   it lands in `errors`, is absent from `reachable`, `values` has no key for it, and entries
   held only by `pihole1` come back `consistent`.
