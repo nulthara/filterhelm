@@ -1,6 +1,6 @@
 # 0020 — Unified drift dashboard
 
-Status: in-progress            <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0020-drift-dashboard
 Author: Claude (architect)
 Date: 2026-09-22
