@@ -248,8 +248,6 @@ building carefully rather than reaching for another off-the-shelf syncer:
   without an address or response time. Real upstream response statistics are displayed
   in milliseconds. Switching among the four tabs makes no further request.
 
----
-
 ### 5.10 Drift dashboard
 
 The read-only Drift screen aggregates Local DNS A/AAAA, CNAME records, block-list
@@ -274,6 +272,8 @@ An instance must answer all five reads to participate. Any failed read excludes
 its entire snapshot and shows an error. Missing means absent on a reachable
 instance, never unknown on an unreachable one. Fewer than two reachable
 instances produces a warning; single-instance self-conflicts still appear.
+
+---
 
 ## 6. Non-functional requirements
 
