@@ -5,6 +5,12 @@ Branch: feature/0023-teleporter-backup
 Author: Claude (architect)
 Date: 2026-09-25
 
+Revision 1 (2026-09-25): archive validation strengthened after an adversarial review.
+`zipfile.is_zipfile` accepts an archive with a corrupt member, so a damaged backup would be
+audited and delivered as good. `get_teleporter()` now checks the central directory, entry
+and size bounds, every member's CRC, the required files, and that `pihole.toml` parses.
+Changed sections: Scope, Approach, Steps 1 and 6, Tests, Acceptance criteria.
+
 ## Problem
 
 Nothing in the app can export a Pi-hole's configuration. If an instance's SD card dies, or a
@@ -17,7 +23,8 @@ one-click download per instance without the user opening each Pi-hole's own UI.
 ## Scope
 
 In:
-- `PiholeClient.get_teleporter()` fetches the archive with a size cap and a zip check.
+- `PiholeClient.get_teleporter()` fetches the archive with a size cap and verifies it is
+  intact and complete before returning it.
 - `POST /api/instances/{name}/backup` returns the archive as a `application/zip` attachment
   with a generated filename.
 - Each successful download writes one audit entry, action `backup_download`, recording the
@@ -51,15 +58,27 @@ puts the route behind the existing same-origin check. Rejected alternative: a pl
 `<a href download>` link to a `GET` route. It needs no blob handling, but it loses the
 same-origin check, and an error response would download as a file instead of showing a toast.
 
-**Buffer with a cap, then check the zip.** `get_teleporter()` streams the response and stops
-at 64 MiB with a `PiholeAPIError`. The import options in Pi-hole's spec list config and
-table-level entries (groups, adlists, domains, clients) rather than the gravity domain table,
-so real archives should be far below the cap. The live check in Acceptance records the
-actual size. After reading, `zipfile.is_zipfile` must accept the bytes, so an
-HTML error page or truncated body never reaches the user as a "backup". Streaming the response
-straight to the browser was rejected, because the zip check and the audit hash both need the
-whole body before anything is sent, and 64 MiB of memory is an acceptable ceiling for a
-single-user tool.
+**Buffer with a cap, then verify the archive.** `get_teleporter()` streams the response and
+stops at 64 MiB with a `PiholeAPIError`. The live lab-pihole archive is about 27 KB. A
+backup exists for disaster recovery, so a damaged or incomplete one must fail loudly now
+rather than at restore time. After reading, the backend checks the archive the way a restore
+would need it (Revision 1):
+- the central directory opens, which rejects HTML error pages and truncated bodies;
+- at most 100 entries and 256 MiB of declared uncompressed data, checked before any
+  decompression so a zip bomb cannot tie up the server;
+- every member's CRC matches (`testzip()`);
+- `etc/pihole/pihole.toml` and `etc/pihole/gravity.db` are present, since they hold the
+  settings and the groups, adlists, domains, and clients;
+- `pihole.toml` decodes as UTF-8 and parses as TOML.
+
+`is_zipfile` alone was rejected because it reads only the end-of-archive record and accepts a
+zip whose members are corrupt. Opening `gravity.db` as SQLite was also rejected. It would
+need a temp file, and the CRC check already proves its bytes match what Pi-hole wrote. The
+required-file check has a cost. If a future Pi-hole renames those files, backups fail with a
+clear 502 until this app is updated. Failing loudly is the right direction for DR. Streaming
+the response straight to the browser was rejected, because verification and the audit hash
+both need the whole body before anything is sent, and 64 MiB of memory is an acceptable
+ceiling for a single-user tool.
 
 **Audit fails closed.** `record()` runs after the archive is fetched and checked, and before
 the response is returned. If `record()` raises, the route returns 503 and the archive is not
@@ -104,9 +123,40 @@ a second. The CSP needs no change, because a download is not a fetch or a subres
      `PiholeAPIError(f"GET /api/teleporter failed with HTTP {resp.status_code}", status_code=resp.status_code)`.
      It reads `resp.iter_bytes()` into a `bytearray` and raises
      `PiholeAPIError("Teleporter archive exceeds the size limit")` as soon as the running
-     length passes `TELEPORTER_MAX_BYTES`. After the loop, it raises
-     `PiholeAPIError("Teleporter response was not a zip archive")` unless
-     `zipfile.is_zipfile(io.BytesIO(data))` is true. It returns `bytes(data)`.
+     length passes `TELEPORTER_MAX_BYTES`. After the loop, it calls
+     `_check_teleporter_archive(bytes(data))` and returns `bytes(data)`.
+   - Add module constants `TELEPORTER_MAX_ENTRIES = 100`,
+     `TELEPORTER_MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024`, and
+     `TELEPORTER_REQUIRED_MEMBERS = ("etc/pihole/pihole.toml", "etc/pihole/gravity.db")`.
+     Add `import tomllib`.
+   - Add module-level `_check_teleporter_archive(data: bytes) -> None`. It runs these checks
+     in order, and each failure raises `PiholeAPIError` with the message shown:
+     1. Open `zipfile.ZipFile(io.BytesIO(data))`. `zipfile.BadZipFile` →
+        "Teleporter response was not a zip archive".
+     2. `len(infolist()) > TELEPORTER_MAX_ENTRIES` →
+        "Teleporter archive has too many entries".
+     3. `sum(info.file_size for info in infolist()) > TELEPORTER_MAX_UNCOMPRESSED_BYTES` →
+        "Teleporter archive is too large to verify". This runs before any decompression.
+        `ZipExtFile` truncates each member's output at its declared `file_size`, so this
+        sum bounds the work in step 4.
+     4. `testzip()` returns a member name → "Teleporter archive is corrupt". If it raises
+        `zipfile.BadZipFile`, `zlib.error`, `EOFError`, `NotImplementedError` (unsupported
+        compression), or `RuntimeError` (encrypted member), the message is the same.
+     5. Any name in `TELEPORTER_REQUIRED_MEMBERS` missing from `namelist()` →
+        "Teleporter archive is missing a required file". The message stays fixed so no
+        archive-supplied text reaches the response.
+     6. `tomllib.loads(archive.read("etc/pihole/pihole.toml").decode("utf-8"))` raising
+        `UnicodeDecodeError` or `tomllib.TOMLDecodeError` →
+        "Teleporter archive has an unreadable pihole.toml".
+
+     Step 1 has its own `try`. Steps 2 to 6 sit in a second `try` whose `except` catches
+     `zipfile.BadZipFile`, `zlib.error`, `EOFError`, `NotImplementedError`, `RuntimeError`,
+     and `ValueError` and raises "Teleporter archive is corrupt". Step 6 catches its decode
+     and TOML errors itself, inside that block, so they keep their own message. A malformed
+     archive can therefore only surface as `PiholeAPIError`, never as a 500. Add
+     `import zlib`. The route
+     needs no change, because `_api_error` already maps `PiholeAPIError` to 502 and the
+     check runs before `record()`.
    - Add a docstring block after "Instance health":
      ```
      Config backup (spec confirmed 2026-09-25 against lab-pihole's /api/docs; archive
@@ -186,7 +236,9 @@ a second. The CSP needs no change, because a download is not a fetch or a subres
    - `docs/design.md` §5.1: add a bullet after the Health bullet. Each Instances row has a
      Backup action. It fetches `GET /api/teleporter` through the backend in one session and
      downloads the zip as `pihole-<name>-<UTC timestamp>.zip`. The archive passes through
-     memory only, capped at 64 MiB, and is checked to be a zip. Each download is audited as
+     memory only, capped at 64 MiB. Before delivery the backend verifies every member's CRC
+     and confirms that `pihole.toml` and `gravity.db` are present and that `pihole.toml`
+     parses, so a damaged or incomplete archive returns 502. Each download is audited as
      `backup_download` with size and SHA-256, and fails with 503 if the audit line cannot be
      written. Restore is not offered.
    - `README.md`: in the paragraph beginning "Authentication successes, failures,
@@ -209,7 +261,7 @@ POST /api/instances/{name}/backup
        body: the Teleporter archive bytes, unchanged
   404  {"detail": "Instance not found"}
   409  {"detail": "No credential stored"}
-  502  {"detail": "<PiholeAPIError message>"}     # non-200, oversize, not a zip, auth failure
+  502  {"detail": "<PiholeAPIError message>"}     # non-200, oversize, not a zip, corrupt or incomplete archive, auth failure
   503  {"detail": "Unable to reach Pi-hole instance"}
   503  {"detail": "Backup not delivered: the audit log could not be written"}
 ```
@@ -244,13 +296,35 @@ No config key or DB change.
 
 `tests/test_pihole_client.py` (MockTransport, session set directly, the pattern at
 `test_group_requests_use_name_path_segment`):
-- `test_get_teleporter_returns_zip_bytes` — a 200 response carrying a real zip built with
-  `zipfile.ZipFile` over `io.BytesIO` comes back byte-identical; the request is
-  `GET /api/teleporter` with `X-FTL-SID`.
+Add a test helper
+`teleporter_zip(members: dict[str, bytes] | None = None, compression: int = zipfile.ZIP_DEFLATED) -> bytes`.
+It builds an archive with that compression, with members defaulting to `etc/pihole/pihole.toml` holding
+`b'[dns]\nupstreams = ["1.1.1.1"]\n'` and `etc/pihole/gravity.db` holding `b"sqlite"`.
+- `test_get_teleporter_returns_zip_bytes` — a 200 response carrying `teleporter_zip()`
+  comes back byte-identical; the request is `GET /api/teleporter` with `X-FTL-SID`.
 - `test_get_teleporter_rejects_non_200` — a 401 raises `PiholeAPIError` with `status_code == 401`.
-- `test_get_teleporter_rejects_non_zip` — a 200 HTML body raises `PiholeAPIError`.
+- `test_get_teleporter_rejects_non_zip` — a 200 HTML body raises `PiholeAPIError` matching
+  "not a zip archive".
+- `test_get_teleporter_rejects_truncated_zip` — `teleporter_zip()[:-10]` raises
+  `PiholeAPIError`.
 - `test_get_teleporter_enforces_size_cap` — with `TELEPORTER_MAX_BYTES` monkeypatched to
-  16, a 200 body of 32 bytes raises `PiholeAPIError`.
+  16, a 200 body of 32 bytes raises `PiholeAPIError` matching "exceeds the size limit".
+- `test_get_teleporter_rejects_corrupt_member` — take
+  `teleporter_zip(compression=zipfile.ZIP_STORED)`, locate the `pihole.toml` payload with `bytes.find`, flip one byte of it,
+  and assert `PiholeAPIError` matching "is corrupt". This is the adversarial review's
+  reproduction.
+- `test_get_teleporter_rejects_too_many_entries` — with `TELEPORTER_MAX_ENTRIES`
+  monkeypatched to 2, an archive with the two required members plus one more raises
+  matching "too many entries".
+- `test_get_teleporter_rejects_oversize_uncompressed` — with
+  `TELEPORTER_MAX_UNCOMPRESSED_BYTES` monkeypatched to 16, the default archive (about 37
+  uncompressed bytes) raises
+  matching "too large to verify".
+- `test_get_teleporter_requires_members` — parametrized over each name in
+  `TELEPORTER_REQUIRED_MEMBERS`: an archive without that member raises matching
+  "missing a required file".
+- `test_get_teleporter_rejects_unparseable_toml` — `pihole.toml` holding `b"[dns\n"` raises
+  matching "unreadable pihole.toml", and so does `b"\xff\xfe"`.
 
 `tests/test_api.py`. These tests call route functions directly after `setup_api(monkeypatch)`,
 like the rest of the file, and assert errors with `pytest.raises(HTTPException)`. Add a
@@ -318,6 +392,11 @@ like the rest of the file, and assert errors with `pytest.raises(HTTPException)`
       handback report. The Audit log page shows one
       `backup_download` entry for `lab-pihole` whose `sha256` matches `sha256sum` of the
       saved file.
+- [ ] Live: `get_teleporter()` against `lab-pihole` still returns the archive after
+      Revision 1's checks. Its known contents are `pihole.toml`, `hosts`, `dhcp.leases`,
+      `gravity.db`, and `pihole-FTL.db`, about 27 KB.
+- [ ] No path in `_check_teleporter_archive` can raise anything but `PiholeAPIError`, as
+      each Revision 1 test shows.
 - [ ] Live: with the app's stored password for `lab-pihole` temporarily wrong, Backup shows
       an error toast and no file is saved.
 - [ ] `docs/design.md` §5.1, `README.md`, and `docs/potential-features.md` updated as in Step 6.
