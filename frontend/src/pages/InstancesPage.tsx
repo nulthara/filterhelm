@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
   Alert, App, Badge, Button, Descriptions, Empty, Flex, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import type { DescriptionsProps, TableProps } from 'antd'
-import { api, type HealthStatus, type Instance, type InstanceHealth, type InstanceInput } from '../api'
+import { api, type Download, type HealthStatus, type Instance, type InstanceHealth, type InstanceInput } from '../api'
+
+function saveDownload({ blob, filename }: Download): void {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 const statusColor = { success: 'success', warning: 'warning', error: 'error' } as const
 const compatibilityColor = { compatible: 'success', incompatible: 'error', untested: 'warning', unknown: 'default' } as const
@@ -92,6 +101,7 @@ export default function InstancesPage() {
   const [editing, setEditing] = useState<Instance>()
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState<string>()
+  const [backingUp, setBackingUp] = useState<string>()
   const [form] = Form.useForm<InstanceInput>()
 
   const load = useCallback(async () => {
@@ -178,6 +188,19 @@ export default function InstancesPage() {
     }
   }
 
+  const backup = async (name: string) => {
+    setBackingUp(name)
+    try {
+      const download = await api.downloadBackup(name)
+      saveDownload(download)
+      message.success(`${download.filename} downloaded`)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Backup failed')
+    } finally {
+      setBackingUp(undefined)
+    }
+  }
+
   const remove = async (name: string) => {
     try {
       await api.deleteInstance(name)
@@ -239,6 +262,9 @@ export default function InstancesPage() {
       title: 'Actions', key: 'actions', align: 'right', render: (_, item) => (
         <Space>
           <Button icon={<ReloadOutlined />} loading={testing === item.name} onClick={() => void test(item.name)}>Test</Button>
+          <Tooltip title="Download a Teleporter archive of this Pi-hole's configuration. It may include password hashes, so store it privately.">
+            <Button icon={<DownloadOutlined />} loading={backingUp === item.name} onClick={() => void backup(item.name)}>Backup</Button>
+          </Tooltip>
           <Button icon={<EditOutlined />} onClick={() => openEdit(item)}>Edit</Button>
           <Popconfirm
             title={`Remove ${item.name}?`}

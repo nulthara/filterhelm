@@ -6,6 +6,8 @@ re-reads current state rather than trusting the preview returned earlier.
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
+from datetime import datetime, timezone
 import ipaddress
 import logging
 import os
@@ -15,7 +17,7 @@ from typing import Any, Callable, Literal, NoReturn, TypeVar
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.audit import record
@@ -715,6 +717,34 @@ def instance_test(name: str):
     instance = _instance(name)
     status, detail, versions, _health = _connection(instance)
     return {"status": status, "detail": detail, "versions": versions}
+
+
+def _backup_filename(name: str, now: datetime) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-.") or "instance"
+    return f"pihole-{slug}-{now.strftime('%Y%m%d-%H%M%SZ')}.zip"
+
+
+@router.post("/instances/{name}/backup")
+def instance_backup(name: str) -> Response:
+    instance = _instance(name)
+    try:
+        with _client(instance) as client:
+            archive = client.get_teleporter()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _api_error(exc) from exc
+    try:
+        record(name, "backup_download", {},
+               {"bytes": len(archive), "sha256": hashlib.sha256(archive).hexdigest()})
+    except Exception as exc:  # noqa: BLE001 - no audit line, no archive
+        logger.exception("audit write failed for backup_download on %s", name)
+        raise HTTPException(503, detail="Backup not delivered: the audit log could not be written") from exc
+    filename = _backup_filename(name, datetime.now(timezone.utc))
+    return Response(archive, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store",
+    })
 
 
 def _blocking_state(instance: Instance) -> dict[str, Any]:

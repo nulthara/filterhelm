@@ -1,3 +1,6 @@
+import io
+import zipfile
+
 from app import pihole_client
 from app.pihole_client import Adlist, Client, Domain, Group, Session
 from app.url_policy import PublicAllowlist, URLPolicyError, resolve_instance_destination
@@ -692,5 +695,53 @@ def test_get_sensors_rejects_http_error_and_bad_body(monkeypatch, status, body):
     try:
         with pytest.raises(pihole_client.PiholeAPIError, match="HTTP 503" if status == 503 else "invalid response"):
             client.get_sensors()
+    finally:
+        client._client.close()
+
+
+def test_get_teleporter_returns_zip_bytes(monkeypatch):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("pihole.toml", "# test config")
+    data = buffer.getvalue()
+
+    def respond(request):
+        assert request.method == "GET"
+        assert request.url.path == "/api/teleporter"
+        assert request.headers["X-FTL-SID"] == "session"
+        return httpx.Response(200, content=data)
+
+    client = search_client(monkeypatch, respond)
+    try:
+        assert client.get_teleporter() == data
+    finally:
+        client._client.close()
+
+
+def test_get_teleporter_rejects_non_200(monkeypatch):
+    client = search_client(monkeypatch, lambda _: httpx.Response(401))
+    try:
+        with pytest.raises(pihole_client.PiholeAPIError, match="GET /api/teleporter failed with HTTP 401") as caught:
+            client.get_teleporter()
+        assert caught.value.status_code == 401
+    finally:
+        client._client.close()
+
+
+def test_get_teleporter_rejects_non_zip(monkeypatch):
+    client = search_client(monkeypatch, lambda _: httpx.Response(200, content=b"<html>Error</html>"))
+    try:
+        with pytest.raises(pihole_client.PiholeAPIError, match="Teleporter response was not a zip archive"):
+            client.get_teleporter()
+    finally:
+        client._client.close()
+
+
+def test_get_teleporter_enforces_size_cap(monkeypatch):
+    monkeypatch.setattr(pihole_client, "TELEPORTER_MAX_BYTES", 16)
+    client = search_client(monkeypatch, lambda _: httpx.Response(200, content=b"x" * 32))
+    try:
+        with pytest.raises(pihole_client.PiholeAPIError, match="Teleporter archive exceeds the size limit"):
+            client.get_teleporter()
     finally:
         client._client.close()

@@ -60,6 +60,10 @@ millisecond FTL uptime, and sensors roll-up verified read-only):
   GET /api/info/database
   GET /api/info/sensors
 
+Config backup (spec confirmed 2026-09-25 against lab-pihole's /api/docs; archive
+contents not yet round-tripped from this codebase):
+  GET /api/teleporter        application/zip archive of the instance's configuration
+
 Group management (VERIFY against a live instance — not yet round-tripped from this codebase):
   GET    /api/groups
   POST   /api/groups
@@ -75,14 +79,19 @@ Client management (VERIFY against a live instance — not yet round-tripped from
 from __future__ import annotations
 
 from dataclasses import dataclass
+import io
 import ipaddress
 import math
+import zipfile
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
 from app.url_policy import ValidatedDestination, resolve_instance_destination
+
+
+TELEPORTER_MAX_BYTES = 64 * 1024 * 1024
 
 
 class PiholeAPIError(RuntimeError):
@@ -384,6 +393,22 @@ class PiholeClient:
     def _auth_headers(self) -> dict[str, str]:
         assert self._session is not None
         return {"X-FTL-SID": self._session.sid, "X-FTL-CSRF": self._session.csrf}
+
+    def get_teleporter(self) -> bytes:
+        data = bytearray()
+        with self._client.stream("GET", "/api/teleporter", headers=self._auth_headers(), timeout=60.0) as resp:
+            if resp.status_code != 200:
+                raise PiholeAPIError(
+                    f"GET /api/teleporter failed with HTTP {resp.status_code}",
+                    status_code=resp.status_code,
+                )
+            for chunk in resp.iter_bytes():
+                data.extend(chunk)
+                if len(data) > TELEPORTER_MAX_BYTES:
+                    raise PiholeAPIError("Teleporter archive exceeds the size limit")
+        if not zipfile.is_zipfile(io.BytesIO(data)):
+            raise PiholeAPIError("Teleporter response was not a zip archive")
+        return bytes(data)
 
     def get_config(self) -> dict[str, Any]:
         resp = self._client.get("/api/config", headers=self._auth_headers())
