@@ -15,6 +15,8 @@ invariants") it brushes up against, if any.
 
 **Shipped since these notes were first written** (moved out of the backlog):
 
+- In-app audit log viewer with instance, action, actor, and text filters — plan 0022 (design.md §5.11).
+
 - Unified drift dashboard across Local DNS, CNAMEs, block lists, domains, groups,
   clients, and managed settings, with category counts and drift filters —
   plan 0020 (design.md §5.10); rows link to the owning page — plan 0021.
@@ -79,10 +81,6 @@ Instances version check.
   action, not a mutation — useful disaster-recovery insurance independent
   of anything this app manages directly, and doesn't touch the diff-before-
   write path since there's nothing to diff.
-- **In-app audit log viewer.** The audit log (README "Request integrity"
-  section) is a private file today, readable only by grepping on the host.
-  A filterable read view in Settings would surface it without a new write
-  path.
 
 ## 3. New confirmed mutations (same diff-before-write pattern, new action type)
 

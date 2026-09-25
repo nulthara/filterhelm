@@ -120,6 +120,7 @@ Authentication successes, failures, throttling, logouts, and configuration
 mutations are recorded in the private `0600` audit log. The log contains
 usernames, client addresses for login events, DNS names, IP addresses, and
 changed setting values; it never records passwords or session tokens.
+Signed-in users can read and filter it on the Audit log page.
 
 ### HTTP hardening
 
