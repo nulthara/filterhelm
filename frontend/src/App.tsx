@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { DashboardOutlined, DiffOutlined, DatabaseOutlined, DesktopOutlined, FileSearchOutlined, FilterOutlined, GlobalOutlined, HistoryOutlined, LogoutOutlined, SettingOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { AuditOutlined, DashboardOutlined, DiffOutlined, DatabaseOutlined, DesktopOutlined, FileSearchOutlined, FilterOutlined, GlobalOutlined, HistoryOutlined, LogoutOutlined, SettingOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import { Alert, App as AntApp, Button, Card, Form, Input, Layout, Menu, Skeleton, Space, Tooltip, Typography } from 'antd'
 import InstancesPage from './pages/InstancesPage'
 import SettingsPage from './pages/SettingsPage'
@@ -11,6 +11,7 @@ import GroupsPage from './pages/GroupsPage'
 import ClientsPage from './pages/ClientsPage'
 import LookupPage from './pages/LookupPage'
 import QueriesPage from './pages/QueriesPage'
+import AuditPage from './pages/AuditPage'
 import DriftPage, { type DriftTarget } from './pages/DriftPage'
 import { api, type AuthStatus } from './api'
 
@@ -122,11 +123,12 @@ export default function App() {
               { key: 'groups', icon: <TeamOutlined />, label: 'Groups' },
               { key: 'clients', icon: <DesktopOutlined />, label: 'Clients' },
               { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
+              { key: 'audit', icon: <AuditOutlined />, label: 'Audit log' },
             ]}
           />
         </Sider>
         <Content className="app-content">
-          {page === 'status' ? <StatusPage /> : page === 'queries' ? <QueriesPage /> : page === 'drift' ? <DriftPage onNavigate={openFromDrift} /> : page === 'instances' ? <InstancesPage /> : page === 'dns' ? <DNSPage key={dnsTab} initialTab={dnsTab} /> : page === 'domains' ? <DomainsPage /> : page === 'lookup' ? <LookupPage /> : page === 'adlists' ? <AdlistsPage /> : page === 'groups' ? <GroupsPage /> : page === 'clients' ? <ClientsPage /> : <SettingsPage />}
+          {page === 'status' ? <StatusPage /> : page === 'queries' ? <QueriesPage /> : page === 'drift' ? <DriftPage onNavigate={openFromDrift} /> : page === 'instances' ? <InstancesPage /> : page === 'dns' ? <DNSPage key={dnsTab} initialTab={dnsTab} /> : page === 'domains' ? <DomainsPage /> : page === 'lookup' ? <LookupPage /> : page === 'adlists' ? <AdlistsPage /> : page === 'groups' ? <GroupsPage /> : page === 'clients' ? <ClientsPage /> : page === 'audit' ? <AuditPage /> : <SettingsPage />}
         </Content>
       </Layout>
     </Layout>

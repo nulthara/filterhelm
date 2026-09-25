@@ -403,6 +403,33 @@ export interface QueryLogCombined {
   instances_reporting: number
 }
 
+export interface AuditEntry {
+  ts: string
+  instance: string
+  action: string
+  actor: string | null
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+}
+
+export interface AuditLogFilters {
+  instance: string
+  action: string
+  actor: string
+  text: string
+  limit: number
+}
+
+export interface AuditLogResponse extends AuditLogFilters {
+  entries: AuditEntry[]
+  matched: number
+  returned: number
+  skipped: number
+  instances: string[]
+  actions: string[]
+  actors: string[]
+}
+
 export interface QueryLogFilters {
   window: number
   length: number
@@ -500,6 +527,16 @@ export interface DriftResponse {
 
 export const api = {
   drift: (signal?: AbortSignal) => request<DriftResponse>('/api/drift', { signal }),
+  auditLog: (filters: AuditLogFilters, signal?: AbortSignal) => {
+    const params = new URLSearchParams({
+      instance: filters.instance,
+      action: filters.action,
+      actor: filters.actor,
+      text: filters.text,
+      limit: String(filters.limit),
+    })
+    return request<AuditLogResponse>(`/api/audit-log?${params.toString()}`, { signal })
+  },
   queryLog: (filters: QueryLogFilters, signal?: AbortSignal) => {
     const params = new URLSearchParams({
       window: String(filters.window),

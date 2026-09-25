@@ -20,7 +20,7 @@ from app.http_hardening import (
     RequestBodyLimitMiddleware,
     SecurityHeadersMiddleware,
 )
-from app.routes import api, auth, clients, domains, drift, groups, lookup, query_log
+from app.routes import api, audit_log, auth, clients, domains, drift, groups, lookup, query_log
 from app.security import SameOriginMiddleware
 
 hardening = HardeningConfig.from_environment()
@@ -43,6 +43,7 @@ app.include_router(clients.router)
 app.include_router(drift.router)
 app.include_router(lookup.router)
 app.include_router(query_log.router)
+app.include_router(audit_log.router)
 app.mount("/app", StaticFiles(directory="app/static/ui", html=True), name="ui")
 
 

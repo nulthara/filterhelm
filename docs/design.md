@@ -274,6 +274,21 @@ its entire snapshot and shows an error. Missing means absent on a reachable
 instance, never unknown on an unreachable one. Fewer than two reachable
 instances produces a warning; single-instance self-conflicts still appear.
 
+### 5.11 Audit log viewer
+
+- The Audit log page provides read-only `GET /api/audit-log` access behind the
+  existing authentication middleware. Viewing creates no audit entry.
+- Instance, action, and actor filters match exactly on the server. Case-insensitive
+  text search matches values and nested keys, including literal backslashes,
+  rather than JSON-escaped text. Dropdowns use facets from the entire file.
+- The server scans the whole file and returns matching entries newest first in
+  append order, with a default limit of 200 and maximum of 1000. The exact
+  `matched` count includes matches beyond the returned limit.
+- Malformed or partial lines are skipped and counted; the page warns when lines
+  were skipped. Missing fields receive safe defaults.
+- Rows expand to show Before and After values. Filters and an explicit Refresh
+  button load results; there is no polling, mutation, or log export.
+
 ---
 
 ## 6. Non-functional requirements
