@@ -60,8 +60,9 @@ millisecond FTL uptime, and sensors roll-up verified read-only):
   GET /api/info/database
   GET /api/info/sensors
 
-Config backup (spec confirmed 2026-09-25 against lab-pihole's /api/docs; archive
-contents not yet round-tripped from this codebase):
+Config backup (confirmed 2026-09-25 against lab-pihole: a ~27 KB zip of
+etc/pihole/pihole.toml, etc/hosts, etc/pihole/dhcp.leases, etc/pihole/gravity.db,
+and etc/pihole/pihole-FTL.db; pihole.toml carries pwhash and app_pwhash):
   GET /api/teleporter        application/zip archive of the instance's configuration
 
 Group management (VERIFY against a live instance — not yet round-tripped from this codebase):
