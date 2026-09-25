@@ -274,8 +274,6 @@ its entire snapshot and shows an error. Missing means absent on a reachable
 instance, never unknown on an unreachable one. Fewer than two reachable
 instances produces a warning; single-instance self-conflicts still appear.
 
----
-
 ### 5.11 Audit log viewer
 
 - The Audit log page provides read-only `GET /api/audit-log` access behind the
@@ -290,6 +288,8 @@ instances produces a warning; single-instance self-conflicts still appear.
   were skipped. Missing fields receive safe defaults.
 - Rows expand to show Before and After values. Filters and an explicit Refresh
   button load results; there is no polling, mutation, or log export.
+
+---
 
 ## 6. Non-functional requirements
 
