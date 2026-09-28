@@ -177,7 +177,7 @@ sudo chown gitea-runner:gitea-runner /opt/pihole-manager
 sudo -u gitea-runner git clone ssh://git@git.example.com:2222/example/pihole-manager.git /opt/pihole-manager
 cd /opt/pihole-manager
 sudo -u gitea-runner python3 -m venv .venv
-sudo -u gitea-runner ./.venv/bin/pip install -r requirements.lock
+sudo -u gitea-runner ./.venv/bin/pip install --require-hashes --uploaded-prior-to P1D -r requirements.lock
 sudo -u gitea-runner ./.venv/bin/pip install --no-deps --no-build-isolation -e .
 ```
 
