@@ -1,6 +1,6 @@
 # 0024 — Dependency refresh and 24-hour age gate
 
-Status: in-progress           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped           <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0024-dependency-refresh-age-gate
 Author: Claude (architect)
 Date: 2026-09-28
