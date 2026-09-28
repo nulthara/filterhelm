@@ -52,3 +52,12 @@ Coding rules for anyone — Claude or Codex — writing code in this repo. The *
 - Prefer controlled inputs. Break complex JSX expressions into named variables.
 - After any `frontend/` change: `cd frontend && npm run build && npm run lint`, then
   commit the regenerated `app/static/ui/`. The deploy target has no Node.js.
+
+## Dependency updates
+
+- Accept only releases public for at least 24 hours. This mitigates hijacked upstreams.
+- npm: `frontend/.npmrc` enforces `min-release-age=1`. Run `npm audit` after any change.
+  Majors need their own plan.
+- Python: edit pins in `requirements.lock` (and `pyproject.toml` for direct deps).
+  Install with `--uploaded-prior-to P1D`. Run `pip check` and `pip-audit`. Then run
+  `python3 scripts/lock_hashes.py`. Never hand-edit `--hash` lines.
