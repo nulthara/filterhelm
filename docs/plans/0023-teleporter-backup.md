@@ -1,6 +1,6 @@
 # 0023 — Per-instance Teleporter backup download
 
-Status: in-progress         <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped         <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0023-teleporter-backup
 Author: Claude (architect)
 Date: 2026-09-25
