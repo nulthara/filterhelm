@@ -102,8 +102,11 @@ Rejected:
    new transitive packages.
 4. **Install and check.**
    `./.venv/bin/pip install --uploaded-prior-to P1D -r requirements.lock`, then
+   `./.venv/bin/pip install --no-deps --no-build-isolation -e .` so the installed project
+   metadata carries the new `pyproject.toml` pins, then
    `./.venv/bin/pip check` and `./.venv/bin/pip-audit -r requirements.lock --no-deps --disable-pip`.
-   Both checks must be clean.
+   Both checks must be clean. Step 6's clean-venv install runs the same editable install
+   before its own `pip check`.
 5. **`scripts/lock_hashes.py`.** Python 3.11+, `from __future__ import annotations`,
    stdlib only, full type hints. Module-level `MIN_AGE = timedelta(hours=24)` and
    `LOCK_PATH = <repo root>/requirements.lock`.
@@ -140,7 +143,8 @@ Rejected:
 6. **Hash the lock.** Run `python3 scripts/lock_hashes.py`. Every pin now has at least one
    `--hash`. Then do a clean-venv check:
    `python3 -m venv <scratch> && <scratch>/bin/pip install --require-hashes --uploaded-prior-to P1D -r requirements.lock`
-   must succeed.
+   must succeed. Then `<scratch>/bin/pip install --no-deps --no-build-isolation -e .` and
+   `<scratch>/bin/pip check` must both succeed.
 7. **`deploy.yml`.** In "Install dependencies", change the first command to
    `./.venv/bin/pip install --require-hashes --uploaded-prior-to P1D -r requirements.lock`.
    Leave the `-e .` line unchanged, because a local editable project cannot be
@@ -221,8 +225,8 @@ touches the network.
 - [ ] Every lock entry carries `--hash=sha256:` lines, and a rerun of
       `python3 scripts/lock_hashes.py` produces no diff.
 - [ ] A clean venv installs with
-      `pip install --require-hashes --uploaded-prior-to P1D -r requirements.lock`, and
-      `pip check` is clean.
+      `pip install --require-hashes --uploaded-prior-to P1D -r requirements.lock` plus
+      `pip install --no-deps --no-build-isolation -e .`, and `pip check` is clean.
 - [ ] `pip-audit -r requirements.lock --no-deps --disable-pip` reports no known
       vulnerabilities.
 - [ ] `frontend/.npmrc` contains `min-release-age=1`. `npm audit` reports 0
