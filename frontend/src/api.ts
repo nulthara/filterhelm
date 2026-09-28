@@ -474,24 +474,38 @@ function errorDetail(detail: unknown, fallback: string): string {
   return message(detail) ?? fallback
 }
 
+async function failure(path: string, response: Response): Promise<Error> {
+  let detail = `${response.status} ${response.statusText}`
+  try {
+    const body = await response.json()
+    detail = errorDetail(body?.detail, detail)
+  } catch {
+    // The status text remains the useful fallback for a non-JSON response.
+  }
+  if (response.status === 401 && !path.startsWith('/api/auth/login')) {
+    sessionExpiredHandlers.forEach((handler) => handler())
+  }
+  return new Error(detail)
+}
+
+export interface Download {
+  blob: Blob
+  filename: string
+}
+
+async function download(path: string, fallback: string, init?: RequestInit): Promise<Download> {
+  const response = await fetch(path, init)
+  if (!response.ok) throw await failure(path, response)
+  const filename = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? fallback
+  return { blob: await response.blob(), filename }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
   })
-  if (!response.ok) {
-    let detail = `${response.status} ${response.statusText}`
-    try {
-      const body = await response.json()
-      detail = errorDetail(body?.detail, detail)
-    } catch {
-      // The status text remains the useful fallback for a non-JSON response.
-    }
-    if (response.status === 401 && !path.startsWith('/api/auth/login')) {
-      sessionExpiredHandlers.forEach((handler) => handler())
-    }
-    throw new Error(detail)
-  }
+  if (!response.ok) throw await failure(path, response)
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
@@ -582,6 +596,8 @@ export const api = {
     request<void>(`/api/instances/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   testInstance: (name: string) =>
     request<{ status: Status; detail: string; versions: PiHoleVersions | null }>(`/api/instances/${encodeURIComponent(name)}/test`, { method: 'POST' }),
+  downloadBackup: (name: string) =>
+    download(`/api/instances/${encodeURIComponent(name)}/backup`, `pihole-${name}-backup.zip`, { method: 'POST' }),
   status: (options?: { background?: boolean }) =>
     request<{ instances: BlockingStatus[] }>(
       '/api/status',

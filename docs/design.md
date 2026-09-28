@@ -113,6 +113,13 @@ building carefully rather than reaching for another off-the-shelf syncer:
   collapsible detail row under each instance. A warning or critical instance opens
   its detail row automatically; a healthy one starts collapsed. Expanding or
   collapsing a row overrides that default for the rest of the session.
+- Each Instances row has a Backup action. It fetches `GET /api/teleporter` through
+  the backend in one session and downloads the zip as `pihole-<name>-<UTC timestamp>.zip`.
+  The archive passes through memory only, capped at 64 MiB. Before delivery the backend
+  verifies every member's CRC and confirms that `pihole.toml` and `gravity.db` are present
+  and that `pihole.toml` parses, so a damaged or incomplete archive returns 502.
+  Each download is audited as `backup_download` with size and SHA-256, and fails with
+  503 if the audit line cannot be written. Restore is not offered.
 - A dedicated status view shows the current blocking state and remaining
   pause timer. Blocking can be paused for 10 seconds, 30 seconds, 5 minutes,
   or indefinitely and resumed for one instance or a selected group. Group

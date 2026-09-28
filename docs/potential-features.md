@@ -15,6 +15,8 @@ invariants") it brushes up against, if any.
 
 **Shipped since these notes were first written** (moved out of the backlog):
 
+- Per-instance Teleporter config backup download, audited — plan 0023 (design.md §5.1).
+
 - In-app audit log viewer with instance, action, actor, and text filters — plan 0022 (design.md §5.11).
 
 - Unified drift dashboard across Local DNS, CNAMEs, block lists, domains, groups,
@@ -76,11 +78,7 @@ Lower risk than anything above, since there's no diff-before-write surface
 to get right — just new fan-out reads, same shape as Status (§5.1) and the
 Instances version check.
 
-- **Config backup via Teleporter.** `/api/teleporter` returns a full
-  config export. A "download backup" button per instance is a read/export
-  action, not a mutation — useful disaster-recovery insurance independent
-  of anything this app manages directly, and doesn't touch the diff-before-
-  write path since there's nothing to diff.
+Nothing is outstanding in this section.
 
 ## 3. New confirmed mutations (same diff-before-write pattern, new action type)
 
@@ -179,5 +177,5 @@ Instances version check.
 
 ## Suggested next pick
 
-The next read-only item is **config backup via Teleporter** using `/api/teleporter`
-for a per-instance configuration download. It is a reasonable `/plan` target next.
+The next pick is **FTL service actions** in §3: restart the DNS resolver and flush
+logs through `/api/action/*`, with single-instance confirmation and auditing.

@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import io
+import re
+import zipfile
+from datetime import datetime, timezone
+
 import threading
 from dataclasses import replace
 
@@ -30,6 +36,11 @@ class FakeCredentials:
 
 
 class FakePiholeClient:
+    teleporter: bytes = b""
+
+    def get_teleporter(self):
+        return self.teleporter
+
     system_info = SystemInfo(1296249, 2097152, 54137, 2042507, 2.581453323364258,
                              8388604, 3017108, 35.9667472680794, 4, 6.974999904632568,
                              (0.6064453125, 1.32763671875, 1.234375))
@@ -161,6 +172,10 @@ def setup_api(monkeypatch):
     monkeypatch.setattr(api, "clear_gravity_pending", pending.discard)
     monkeypatch.setattr(api, "resolve_instance_destination", lambda value: value)
     monkeypatch.setattr(api, "screen_adlist_url", lambda value, **_kwargs: value)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("pihole.toml", "# test config")
+    FakePiholeClient.teleporter = buffer.getvalue()
     FakePiholeClient.info_calls = []
     FakePiholeClient.patches = []
     FakePiholeClient.added_hosts = []
@@ -2213,3 +2228,83 @@ def test_health_status_in_route_payload(monkeypatch):
     assert row["status"] == "success"
     assert row["status_detail"] == "Reachable"
     assert "secret" not in repr(row)
+
+
+def test_instance_backup_returns_archive_and_audits(monkeypatch):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    archive = FakePiholeClient.teleporter
+    response = api.instance_backup("pihole1")
+    assert response.body == archive
+    assert response.media_type == "application/zip"
+    assert re.fullmatch(r'attachment; filename="pihole-pihole1-\d{8}-\d{6}Z\.zip"', response.headers["content-disposition"])
+    assert response.headers["cache-control"] == "no-store"
+    assert audits == [("pihole1", "backup_download", {}, {
+        "bytes": len(archive), "sha256": hashlib.sha256(archive).hexdigest(),
+    })]
+
+
+def test_instance_backup_unknown_instance_404(monkeypatch):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    with pytest.raises(HTTPException) as caught:
+        api.instance_backup("missing")
+    assert caught.value.status_code == 404
+    assert caught.value.detail == "Instance not found"
+    assert audits == []
+
+
+def test_instance_backup_without_credential_409(monkeypatch):
+    _, credentials = setup_api(monkeypatch)
+    credentials.delete("pihole1")
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    with pytest.raises(HTTPException) as caught:
+        api.instance_backup("pihole1")
+    assert caught.value.status_code == 409
+    assert caught.value.detail == "No credential stored"
+    assert audits == []
+
+
+def test_instance_backup_pihole_error_502(monkeypatch):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+
+    class BrokenClient(FakePiholeClient):
+        def get_teleporter(self):
+            raise PiholeAPIError("GET /api/teleporter failed with HTTP 500")
+
+    monkeypatch.setattr(api, "PiholeClient", BrokenClient)
+    with pytest.raises(HTTPException) as caught:
+        api.instance_backup("pihole1")
+    assert caught.value.status_code == 502
+    assert caught.value.detail == "GET /api/teleporter failed with HTTP 500"
+    assert audits == []
+
+
+def test_instance_backup_fails_closed_when_audit_fails(monkeypatch):
+    setup_api(monkeypatch)
+
+    def fail_record(*_args):
+        raise OSError("Audit unavailable")
+
+    monkeypatch.setattr(api, "record", fail_record)
+    with pytest.raises(HTTPException) as caught:
+        api.instance_backup("pihole1")
+    assert caught.value.status_code == 503
+    assert caught.value.detail == "Backup not delivered: the audit log could not be written"
+
+
+def test_instance_backup_route_is_post_only():
+    routes = [route for route in api.router.routes if route.path == "/api/instances/{name}/backup"]
+    assert len(routes) == 1
+    assert routes[0].methods == {"POST"}
+
+
+def test_backup_filename_slugs_instance_name():
+    now = datetime(2026, 9, 25, 14, 3, 7, tzinfo=timezone.utc)
+    assert api._backup_filename("lab pihole/1", now) == "pihole-lab-pihole-1-20260925-140307Z.zip"
+    assert api._backup_filename("../", now) == "pihole-instance-20260925-140307Z.zip"

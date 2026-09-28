@@ -60,6 +60,11 @@ millisecond FTL uptime, and sensors roll-up verified read-only):
   GET /api/info/database
   GET /api/info/sensors
 
+Config backup (confirmed 2026-09-25 against lab-pihole: a ~27 KB zip of
+etc/pihole/pihole.toml, etc/hosts, etc/pihole/dhcp.leases, etc/pihole/gravity.db,
+and etc/pihole/pihole-FTL.db; pihole.toml carries pwhash and app_pwhash):
+  GET /api/teleporter        application/zip archive of the instance's configuration
+
 Group management (VERIFY against a live instance — not yet round-tripped from this codebase):
   GET    /api/groups
   POST   /api/groups
@@ -75,8 +80,11 @@ Client management (VERIFY against a live instance — not yet round-tripped from
 from __future__ import annotations
 
 from dataclasses import dataclass
+import io
 import ipaddress
 import math
+import tomllib
+import zipfile
 from typing import Any
 from urllib.parse import quote
 
@@ -85,10 +93,58 @@ import httpx
 from app.url_policy import ValidatedDestination, resolve_instance_destination
 
 
+TELEPORTER_MAX_BYTES = 64 * 1024 * 1024
+TELEPORTER_MAX_ENTRIES = 100
+TELEPORTER_MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+TELEPORTER_REQUIRED_MEMBERS = ("etc/pihole/pihole.toml", "etc/pihole/gravity.db")
+TELEPORTER_COMPRESSION = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
+
+
 class PiholeAPIError(RuntimeError):
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+def _check_teleporter_archive(data: bytes) -> None:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except Exception as exc:
+        raise PiholeAPIError("Teleporter response was not a zip archive") from exc
+
+    try:
+        with archive:
+            infos = archive.infolist()
+            names = archive.namelist()
+            if len(infos) > TELEPORTER_MAX_ENTRIES:
+                raise PiholeAPIError("Teleporter archive has too many entries")
+            if len(names) != len(set(names)):
+                raise PiholeAPIError("Teleporter archive has duplicate entries")
+            if any(info.compress_type not in TELEPORTER_COMPRESSION for info in infos):
+                raise PiholeAPIError("Teleporter archive uses unsupported compression")
+            if any(info.flag_bits & 0x1 for info in infos):
+                raise PiholeAPIError("Teleporter archive is encrypted")
+            if sum(info.file_size for info in infos) > TELEPORTER_MAX_UNCOMPRESSED_BYTES:
+                raise PiholeAPIError("Teleporter archive is too large to verify")
+
+            total = 0
+            for info in infos:
+                with archive.open(info) as member:
+                    while chunk := member.read(1024 * 1024):
+                        total += len(chunk)
+                        if total > TELEPORTER_MAX_UNCOMPRESSED_BYTES:
+                            raise PiholeAPIError("Teleporter archive is too large to verify")
+
+            if any(name not in names for name in TELEPORTER_REQUIRED_MEMBERS):
+                raise PiholeAPIError("Teleporter archive is missing a required file")
+            try:
+                tomllib.loads(archive.read("etc/pihole/pihole.toml").decode("utf-8"))
+            except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+                raise PiholeAPIError("Teleporter archive has an unreadable pihole.toml") from exc
+    except PiholeAPIError:
+        raise
+    except Exception as exc:
+        raise PiholeAPIError("Teleporter archive is corrupt") from exc
 
 
 class _PinnedTransport(httpx.HTTPTransport):
@@ -384,6 +440,21 @@ class PiholeClient:
     def _auth_headers(self) -> dict[str, str]:
         assert self._session is not None
         return {"X-FTL-SID": self._session.sid, "X-FTL-CSRF": self._session.csrf}
+
+    def get_teleporter(self) -> bytes:
+        data = bytearray()
+        with self._client.stream("GET", "/api/teleporter", headers=self._auth_headers(), timeout=60.0) as resp:
+            if resp.status_code != 200:
+                raise PiholeAPIError(
+                    f"GET /api/teleporter failed with HTTP {resp.status_code}",
+                    status_code=resp.status_code,
+                )
+            for chunk in resp.iter_bytes():
+                data.extend(chunk)
+                if len(data) > TELEPORTER_MAX_BYTES:
+                    raise PiholeAPIError("Teleporter archive exceeds the size limit")
+        _check_teleporter_archive(bytes(data))
+        return bytes(data)
 
     def get_config(self) -> dict[str, Any]:
         resp = self._client.get("/api/config", headers=self._auth_headers())
