@@ -24,7 +24,7 @@ In:
 - Add `scripts/lock_hashes.py`. It rewrites `requirements.lock` with sha256 hashes and
   refuses any release or file younger than 24 hours.
 - Hash-pin `requirements.lock`.
-- Deploy installs with `--require-hashes --uploaded-prior-to P1D`.
+- Deploy installs with `--require-hashes`.
 - Add `frontend/.npmrc` with `min-release-age=1`.
 - Document the refresh procedure in `AGENTS.md`.
 - Add tests that guard the gate configuration and the script's selection logic.
@@ -57,9 +57,12 @@ gets installed.
   is at least 24 hours old, which drops a late-added wheel. The script hashes every
   platform's files, not only the ones this machine would install. That matters because the
   lock is generated on a Python 3.14 dev box and deployed to a different host.
-- **Deploy.** `deploy.yml` adds `--require-hashes --uploaded-prior-to P1D` to the lock
-  install. Hash mode rejects any file the lock didn't record. The age flag is a second
-  filter that costs nothing.
+- **Deploy.** `deploy.yml` adds `--require-hashes` to the lock install. Hash mode rejects
+  any file the lock didn't record, and the lock records only files that were at least 24
+  hours old when hashed. So the age rule reaches the deploy through the hashes. The deploy
+  host runs Debian 13's pip 25.1.1 (checked 2026-09-28), both in the deploy venv and in a
+  fresh `python3 -m venv`. `--uploaded-prior-to` needs pip 26.0 or newer, so the deploy
+  must not use it.
 
 Rejected:
 - **pip-tools `pip-compile --generate-hashes`.** It adds a new dev dependency, which is
@@ -68,6 +71,9 @@ Rejected:
 - **`pip lock` / `pylock.toml`.** It would change the deploy's `pip install -r` flow and
   the lock format together. That is a bigger change than this one needs.
 - **Age flags only, no hashes.** This leaves the late-added-wheel gap open.
+- **Bootstrapping pip 26.2.1 on the host** (revision 2) to keep `--uploaded-prior-to` at
+  deploy. It needs a second hash-pinned lock and a self-upgrading pip step in every deploy,
+  all to add a filter the hashes already provide.
 - **Using `httpx` in the script.** The script uses stdlib `urllib.request`, so it runs from
   any Python 3.11+ without the venv.
 
@@ -76,9 +82,9 @@ Rejected:
 - `pyproject.toml` — starlette `==1.7.0`, uvicorn `==0.54.0` in `dependencies`.
 - `requirements.lock` — bumped pins, then rewritten with `--hash` lines by the script.
 - `scripts/lock_hashes.py` — new; hash-pins the lock under the 24-hour rule.
-- `.gitea/workflows/deploy.yml` — hash-checked, age-gated lock install.
+- `.gitea/workflows/deploy.yml` — hash-checked lock install.
 - `docs/deploy.md` — the bootstrap `pip install -r requirements.lock` (around line 180) gets
-  the same flags.
+  `--require-hashes`.
 - `frontend/.npmrc` — new; `min-release-age=1`.
 - `frontend/package-lock.json` — in-range updates.
 - `app/static/ui/` — rebuilt bundle after the npm updates.
@@ -146,12 +152,13 @@ Rejected:
    must succeed. Then `<scratch>/bin/pip install --no-deps --no-build-isolation -e .` and
    `<scratch>/bin/pip check` must both succeed.
 7. **`deploy.yml`.** In "Install dependencies", change the first command to
-   `./.venv/bin/pip install --require-hashes --uploaded-prior-to P1D -r requirements.lock`.
-   Leave the `-e .` line unchanged, because a local editable project cannot be
-   hash-checked. Add a one-line comment above the command noting that the lock is
-   hash-pinned and the age gate backs it up.
-8. **`docs/deploy.md`.** Apply the same flags to the bootstrap
-   `sudo -u gitea-runner ./.venv/bin/pip install -r requirements.lock` line.
+   `./.venv/bin/pip install --require-hashes -r requirements.lock`. Do not add
+   `--uploaded-prior-to`, because the host's pip 25.1.1 rejects it. Leave the `-e .` line
+   unchanged, because a local editable project cannot be hash-checked. The comment above
+   the command says the lock is hash-pinned and that its hashes already exclude files
+   younger than 24 hours.
+8. **`docs/deploy.md`.** Apply the same `--require-hashes` flag, and no age flag, to the
+   bootstrap `sudo -u gitea-runner ./.venv/bin/pip install -r requirements.lock` line.
 9. **`AGENTS.md`.** Add a `## Dependency updates` section after "Frontend". It holds these
    rules, without URLs:
    - Accept only releases public for at least 24 hours. This mitigates hijacked upstreams.
@@ -194,8 +201,10 @@ touches the network.
 
 - `test_npmrc_sets_min_release_age` — `frontend/.npmrc` has `min-release-age` with an
   integer value of at least 1.
-- `test_deploy_lock_install_requires_hashes_and_age` — the `deploy.yml` line installing
-  `-r requirements.lock` contains `--require-hashes` and `--uploaded-prior-to P1D`.
+- `test_deploy_lock_install_requires_hashes` — every `deploy.yml` and `docs/deploy.md`
+  line installing `-r requirements.lock` contains `--require-hashes` and does not contain
+  `--uploaded-prior-to`, which the host's pip 25.1.1 rejects. The test asserts that each
+  file has at least one such line.
 - `test_requirements_lock_is_fully_hashed` — every pin in `requirements.lock` has an exact
   `==` version and at least one `--hash=sha256:` of 64 hex chars.
 - `test_pyproject_pins_match_lock` — every `name==version` in `pyproject.toml`
@@ -210,9 +219,11 @@ touches the network.
   fetch URLs, so it does not apply. Nothing in `app/` changes.
 - **8. Compiled frontend is committed.** The npm updates change the bundle, so step 2
   rebuilds and stages `app/static/ui/`.
-- **9. `main` is production.** `deploy.yml` changes. A malformed lock or a missing hash
-  would fail the deploy's install step before the restart, so the running service stays
-  up on the old code. Step 6's clean-venv install proves the flags before merge. The
+- **9. `main` is production.** `deploy.yml` changes. The workflow resets the checkout
+  before it installs. So a failed install leaves new code on disk with the old venv, and
+  the old process keeps running only until its next restart. Two checks prevent that.
+  Step 6's clean-venv install proves the lock locally, and a dry run on the host with its
+  own pip 25.1.1 and Python 3.13 proves it there (see Acceptance criteria). The
   change lands on `feature/0024-dependency-refresh-age-gate` only.
 - **4. No background scheduler.** The script is run by hand. There is no cron job and no
   CI job.
@@ -231,7 +242,10 @@ touches the network.
       vulnerabilities.
 - [ ] `frontend/.npmrc` contains `min-release-age=1`. `npm audit` reports 0
       vulnerabilities. `package.json` is unchanged.
-- [ ] `deploy.yml` and `docs/deploy.md` use the hash-checked, age-gated install.
+- [ ] `deploy.yml` and `docs/deploy.md` install with `--require-hashes` and without
+      `--uploaded-prior-to`.
+- [ ] On the deploy host (user-run, before merge), this command succeeds:
+      `sudo -u gitea-runner /opt/pihole-manager/.venv/bin/pip install --dry-run --require-hashes -r <branch requirements.lock>`.
 - [ ] `AGENTS.md` has the "Dependency updates" section.
 - [ ] `./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8420` starts, and
       `/api/auth/status` answers 200.
