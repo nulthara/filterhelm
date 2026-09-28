@@ -699,11 +699,24 @@ def test_get_sensors_rejects_http_error_and_bad_body(monkeypatch, status, body):
         client._client.close()
 
 
-def test_get_teleporter_returns_zip_bytes(monkeypatch):
+def teleporter_zip(
+    members: dict[str, bytes] | None = None,
+    compression: int = zipfile.ZIP_DEFLATED,
+) -> bytes:
+    if members is None:
+        members = {
+            "etc/pihole/pihole.toml": b'[dns]\nupstreams = ["1.1.1.1"]\n',
+            "etc/pihole/gravity.db": b"sqlite",
+        }
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr("pihole.toml", "# test config")
-    data = buffer.getvalue()
+    with zipfile.ZipFile(buffer, "w", compression=compression) as archive:
+        for name, payload in members.items():
+            archive.writestr(name, payload)
+    return buffer.getvalue()
+
+
+def test_get_teleporter_returns_zip_bytes(monkeypatch):
+    data = teleporter_zip()
 
     def respond(request):
         assert request.method == "GET"
@@ -721,8 +734,9 @@ def test_get_teleporter_returns_zip_bytes(monkeypatch):
 def test_get_teleporter_rejects_non_200(monkeypatch):
     client = search_client(monkeypatch, lambda _: httpx.Response(401))
     try:
-        with pytest.raises(pihole_client.PiholeAPIError, match="GET /api/teleporter failed with HTTP 401") as caught:
+        with pytest.raises(pihole_client.PiholeAPIError) as caught:
             client.get_teleporter()
+        assert str(caught.value) == "GET /api/teleporter failed with HTTP 401"
         assert caught.value.status_code == 401
     finally:
         client._client.close()
@@ -731,8 +745,9 @@ def test_get_teleporter_rejects_non_200(monkeypatch):
 def test_get_teleporter_rejects_non_zip(monkeypatch):
     client = search_client(monkeypatch, lambda _: httpx.Response(200, content=b"<html>Error</html>"))
     try:
-        with pytest.raises(pihole_client.PiholeAPIError, match="Teleporter response was not a zip archive"):
+        with pytest.raises(pihole_client.PiholeAPIError) as caught:
             client.get_teleporter()
+        assert str(caught.value) == "Teleporter response was not a zip archive"
     finally:
         client._client.close()
 
@@ -741,7 +756,119 @@ def test_get_teleporter_enforces_size_cap(monkeypatch):
     monkeypatch.setattr(pihole_client, "TELEPORTER_MAX_BYTES", 16)
     client = search_client(monkeypatch, lambda _: httpx.Response(200, content=b"x" * 32))
     try:
-        with pytest.raises(pihole_client.PiholeAPIError, match="Teleporter archive exceeds the size limit"):
+        with pytest.raises(pihole_client.PiholeAPIError) as caught:
             client.get_teleporter()
+        assert str(caught.value) == "Teleporter archive exceeds the size limit"
     finally:
         client._client.close()
+
+
+def test_get_teleporter_rejects_truncated_zip():
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(teleporter_zip()[:-10])
+    assert str(caught.value) == "Teleporter response was not a zip archive"
+
+
+@pytest.mark.parametrize("error", [
+    UnicodeDecodeError("utf-8", b"", 0, 1, "bad"),
+    NotImplementedError(),
+])
+def test_check_teleporter_archive_maps_open_errors(monkeypatch, error):
+    data = teleporter_zip()
+
+    def fail_open(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(pihole_client.zipfile, "ZipFile", fail_open)
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(data)
+    assert str(caught.value) == "Teleporter response was not a zip archive"
+
+
+def test_get_teleporter_rejects_corrupt_member(monkeypatch):
+    data = bytearray(teleporter_zip(compression=zipfile.ZIP_STORED))
+    offset = data.find(b'[dns]\nupstreams = ["1.1.1.1"]\n')
+    assert offset >= 0
+    data[offset] ^= 1
+    client = search_client(monkeypatch, lambda _: httpx.Response(200, content=bytes(data)))
+    try:
+        with pytest.raises(pihole_client.PiholeAPIError) as caught:
+            client.get_teleporter()
+        assert str(caught.value) == "Teleporter archive is corrupt"
+    finally:
+        client._client.close()
+
+
+def test_check_teleporter_archive_rejects_duplicate_names():
+    marker = b"# first copy marker\n"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        archive.writestr("etc/pihole/pihole.toml", marker)
+        archive.writestr("etc/pihole/gravity.db", b"sqlite")
+        with pytest.warns(UserWarning):
+            archive.writestr("etc/pihole/pihole.toml", b'[dns]\nupstreams = ["1.1.1.1"]\n')
+    data = bytearray(buffer.getvalue())
+    offset = data.find(marker)
+    assert offset >= 0
+    data[offset] ^= 1
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(bytes(data))
+    assert str(caught.value) == "Teleporter archive has duplicate entries"
+
+
+@pytest.mark.parametrize("compression", [zipfile.ZIP_LZMA, zipfile.ZIP_BZIP2])
+def test_check_teleporter_archive_rejects_unsupported_compression(compression):
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(teleporter_zip(compression=compression))
+    assert str(caught.value) == "Teleporter archive uses unsupported compression"
+
+
+def test_check_teleporter_archive_rejects_encrypted_member():
+    data = bytearray(teleporter_zip())
+    data[data.find(b"PK\x01\x02") + 8] |= 0x1
+    data[data.find(b"PK\x03\x04") + 6] |= 0x1
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(bytes(data))
+    assert str(caught.value) == "Teleporter archive is encrypted"
+
+
+def test_get_teleporter_rejects_too_many_entries(monkeypatch):
+    monkeypatch.setattr(pihole_client, "TELEPORTER_MAX_ENTRIES", 2)
+    data = teleporter_zip({
+        "etc/pihole/pihole.toml": b"[dns]\n",
+        "etc/pihole/gravity.db": b"sqlite",
+        "etc/hosts": b"127.0.0.1 localhost",
+    })
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(data)
+    assert str(caught.value) == "Teleporter archive has too many entries"
+
+
+def test_get_teleporter_rejects_oversize_uncompressed(monkeypatch):
+    monkeypatch.setattr(pihole_client, "TELEPORTER_MAX_UNCOMPRESSED_BYTES", 16)
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(teleporter_zip())
+    assert str(caught.value) == "Teleporter archive is too large to verify"
+
+
+@pytest.mark.parametrize("missing", ["etc/pihole/pihole.toml", "etc/pihole/gravity.db"])
+def test_get_teleporter_requires_members(missing):
+    members = {
+        "etc/pihole/pihole.toml": b'[dns]\nupstreams = ["1.1.1.1"]\n',
+        "etc/pihole/gravity.db": b"sqlite",
+    }
+    del members[missing]
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(teleporter_zip(members))
+    assert str(caught.value) == "Teleporter archive is missing a required file"
+
+
+@pytest.mark.parametrize("config", [b"[dns\n", b"\xff\xfe"])
+def test_get_teleporter_rejects_unparseable_toml(config):
+    data = teleporter_zip({
+        "etc/pihole/pihole.toml": config,
+        "etc/pihole/gravity.db": b"sqlite",
+    })
+    with pytest.raises(pihole_client.PiholeAPIError) as caught:
+        pihole_client._check_teleporter_archive(data)
+    assert str(caught.value) == "Teleporter archive has an unreadable pihole.toml"

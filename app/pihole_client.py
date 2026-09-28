@@ -83,6 +83,7 @@ from dataclasses import dataclass
 import io
 import ipaddress
 import math
+import tomllib
 import zipfile
 from typing import Any
 from urllib.parse import quote
@@ -93,12 +94,57 @@ from app.url_policy import ValidatedDestination, resolve_instance_destination
 
 
 TELEPORTER_MAX_BYTES = 64 * 1024 * 1024
+TELEPORTER_MAX_ENTRIES = 100
+TELEPORTER_MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+TELEPORTER_REQUIRED_MEMBERS = ("etc/pihole/pihole.toml", "etc/pihole/gravity.db")
+TELEPORTER_COMPRESSION = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
 
 
 class PiholeAPIError(RuntimeError):
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+def _check_teleporter_archive(data: bytes) -> None:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except Exception as exc:
+        raise PiholeAPIError("Teleporter response was not a zip archive") from exc
+
+    try:
+        with archive:
+            infos = archive.infolist()
+            names = archive.namelist()
+            if len(infos) > TELEPORTER_MAX_ENTRIES:
+                raise PiholeAPIError("Teleporter archive has too many entries")
+            if len(names) != len(set(names)):
+                raise PiholeAPIError("Teleporter archive has duplicate entries")
+            if any(info.compress_type not in TELEPORTER_COMPRESSION for info in infos):
+                raise PiholeAPIError("Teleporter archive uses unsupported compression")
+            if any(info.flag_bits & 0x1 for info in infos):
+                raise PiholeAPIError("Teleporter archive is encrypted")
+            if sum(info.file_size for info in infos) > TELEPORTER_MAX_UNCOMPRESSED_BYTES:
+                raise PiholeAPIError("Teleporter archive is too large to verify")
+
+            total = 0
+            for info in infos:
+                with archive.open(info) as member:
+                    while chunk := member.read(1024 * 1024):
+                        total += len(chunk)
+                        if total > TELEPORTER_MAX_UNCOMPRESSED_BYTES:
+                            raise PiholeAPIError("Teleporter archive is too large to verify")
+
+            if any(name not in names for name in TELEPORTER_REQUIRED_MEMBERS):
+                raise PiholeAPIError("Teleporter archive is missing a required file")
+            try:
+                tomllib.loads(archive.read("etc/pihole/pihole.toml").decode("utf-8"))
+            except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+                raise PiholeAPIError("Teleporter archive has an unreadable pihole.toml") from exc
+    except PiholeAPIError:
+        raise
+    except Exception as exc:
+        raise PiholeAPIError("Teleporter archive is corrupt") from exc
 
 
 class _PinnedTransport(httpx.HTTPTransport):
@@ -407,8 +453,7 @@ class PiholeClient:
                 data.extend(chunk)
                 if len(data) > TELEPORTER_MAX_BYTES:
                     raise PiholeAPIError("Teleporter archive exceeds the size limit")
-        if not zipfile.is_zipfile(io.BytesIO(data)):
-            raise PiholeAPIError("Teleporter response was not a zip archive")
+        _check_teleporter_archive(bytes(data))
         return bytes(data)
 
     def get_config(self) -> dict[str, Any]:
