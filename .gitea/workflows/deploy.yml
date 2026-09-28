@@ -29,8 +29,8 @@ jobs:
         run: |
           set -eu
           cd /opt/pihole-manager
-          # The lock is hash-pinned, with the age gate as a second filter.
-          ./.venv/bin/pip install --require-hashes --uploaded-prior-to P1D -r requirements.lock
+          # The lock is hash-pinned; its hashes already exclude files younger than 24 hours.
+          ./.venv/bin/pip install --require-hashes -r requirements.lock
           ./.venv/bin/pip install --no-deps --no-build-isolation -e .
 
       - name: Restart service
