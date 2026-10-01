@@ -229,6 +229,9 @@ PIHOLE_MANAGER_TRUSTED_HOSTS=manager.example,127.0.0.1
 # PIHOLE_MANAGER_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
 ```
 
+Do not set `PIHOLE_MANAGER_DATA` in the environment file: the Quadlet pins it
+to `/data`, taking precedence over the environment file.
+
 The environment file is root-owned, mode `0600`. The host data directory is
 owned by `10001:10001`, mode `0700`, and mounted at `/data` in the container.
 Production uses host networking, preserving real client addresses for proxy
@@ -252,9 +255,11 @@ gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/pihole-manager-redeploy
 ```
 
 The workflow calls the script without arguments. The script builds the image
-from `/opt/pihole-manager` and restarts `pihole-manager.service`; a failed build
-exits before restart, leaving the running container alone. The runner is not
-in a container-runtime group: runtime access would be root-equivalent. It cannot
+from `/opt/pihole-manager`, restarts `pihole-manager.service`, and probes
+`/api/auth/status`. A passing probe promotes the image to `:good`; a failed
+restart or probe rolls back to `:good` when it exists and fails the deploy.
+A failed build exits before restart, leaving the running container alone. The
+runner is not in a container-runtime group: runtime access would be root-equivalent. It cannot
 rewrite the installed root-owned script or Quadlet through a pushed repo edit.
 
 ## 7. First start
@@ -296,7 +301,8 @@ merging the container branch to `main`:
    unit and sudoers rule for rollback.
 
 2. Complete §4–§6, copying the old unit's `Environment=` values into
-   `/etc/pihole-manager/env` as `KEY=value` lines.
+   `/etc/pihole-manager/env` as `KEY=value` lines, except `PIHOLE_MANAGER_DATA`.
+   Step 1 already used that value to find the data to copy.
 
 3. Stop and remove the old unit:
 
@@ -316,8 +322,16 @@ merging the container branch to `main`:
    sudo chown -R 10001:10001 /var/lib/pihole-manager
    ```
 
-5. Run §7's redeploy command and curl probe, then sign in with the existing
-   account. Skip `set-password`.
+5. Run §7's redeploy command and curl probe. Confirm the container data path
+   and migrated files:
+
+   ```bash
+   sudo podman exec pihole-manager printenv PIHOLE_MANAGER_DATA
+   sudo podman exec pihole-manager ls -l /data
+   ```
+
+   The first command must print `/data`, and the second must list the migrated
+   files. Then sign in with the existing account. Skip `set-password`.
 
 6. Merge to `main` only after the cutover succeeds. After the next push deploys
    green, remove the old venv:
@@ -328,14 +342,18 @@ merging the container branch to `main`:
 
 ## 9. Rollback
 
-For a bad image, restore the previous image tag and restart:
+A failed restart or probe automatically restores `:good` when it exists, and
+the deploy run fails. Failed deploys and retries never overwrite `:good`.
+
+To restore the last good image manually:
 
 ```bash
-sudo podman tag localhost/pihole-manager:previous localhost/pihole-manager:latest
+sudo podman tag localhost/pihole-manager:good localhost/pihole-manager:latest
 sudo systemctl restart pihole-manager.service
 ```
 
-The redeploy script retains the prior image as `:previous` before each build.
+Only a passing probe promotes an image to `:good`. For an image that passes
+the probe but misbehaves, revert the commit on `main` and push.
 
 To abandon containers, stop the service, remove
 `/etc/containers/systemd/pihole-manager.container`, restore the saved old unit

@@ -536,6 +536,7 @@ Pull=never
 Network=host
 Volume=/var/lib/pihole-manager:/data
 EnvironmentFile=/etc/pihole-manager/env
+Environment=PIHOLE_MANAGER_DATA=/data
 ReadOnly=true
 NoNewPrivileges=true
 DropCapability=ALL

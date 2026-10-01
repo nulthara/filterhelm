@@ -4,11 +4,27 @@ set -eu
 
 image=localhost/pihole-manager
 
-# Keep the running image for one-step rollback.
-if podman image exists "$image:latest"; then
-    podman tag "$image:latest" "$image:previous"
-fi
+healthy() {
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        curl -fsS -o /dev/null http://127.0.0.1:8420/api/auth/status && return 0
+        sleep 2
+    done
+    return 1
+}
 
 podman build --pull=missing --tag "$image:latest" /opt/pihole-manager
-systemctl restart pihole-manager.service
-podman image prune --force
+
+# Promote to last-known-good only after the new container answers.
+if systemctl restart pihole-manager.service && healthy; then
+    podman tag "$image:latest" "$image:good"
+    podman image prune --force
+    exit 0
+fi
+
+echo "pihole-manager failed its health probe" >&2
+if podman image exists "$image:good"; then
+    echo "rolling back to $image:good" >&2
+    podman tag "$image:good" "$image:latest"
+    systemctl restart pihole-manager.service
+fi
+exit 1

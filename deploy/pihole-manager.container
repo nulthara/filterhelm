@@ -11,6 +11,8 @@ Pull=never
 Network=host
 Volume=/var/lib/pihole-manager:/data
 EnvironmentFile=/etc/pihole-manager/env
+# Wins over EnvironmentFile; the volume is mounted only at /data.
+Environment=PIHOLE_MANAGER_DATA=/data
 ReadOnly=true
 NoNewPrivileges=true
 DropCapability=ALL
