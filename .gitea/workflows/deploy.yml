@@ -1,4 +1,4 @@
-# Deploys to the host this runner lives on — see docs/deploy.md.
+# Pulls main, builds the image, and restarts on the runner host — see docs/deploy.md.
 #
 # Deliberately no actions/checkout and no marketplace actions: the runner
 # executes directly on the deploy target (docs/deploy.md's "runner IS the
@@ -25,23 +25,15 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-      - name: Install dependencies
-        run: |
-          set -eu
-          cd /opt/pihole-manager
-          # The lock is hash-pinned; its hashes already exclude files younger than 24 hours.
-          ./.venv/bin/pip install --require-hashes -r requirements.lock
-          ./.venv/bin/pip install --no-deps --no-build-isolation -e .
-
-      - name: Restart service
+      - name: Build image and restart
         # Must exactly match /etc/sudoers.d/gitea-runner-pihole-manager.
-        run: sudo systemctl restart pihole-manager.service
+        run: sudo /usr/local/sbin/pihole-manager-redeploy
 
       - name: Confirm it came back up
         run: |
           set -eu
-          # The service account's sudoers rule only allows this one restart
-          # command (docs/deploy.md §4) — a failed restart would otherwise
+          # The service account's sudoers rule only allows this one redeploy
+          # command (docs/deploy.md §6) — a failed restart would otherwise
           # look identical to a slow-starting one, so check rather than assume.
           for i in $(seq 1 10); do
             if curl -fsS -o /dev/null http://127.0.0.1:8420/api/auth/status; then

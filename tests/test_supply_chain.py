@@ -17,16 +17,29 @@ def test_npmrc_sets_min_release_age() -> None:
     assert int(settings["min-release-age"]) >= 1
 
 
-def test_deploy_lock_install_requires_hashes() -> None:
-    for filename in (".gitea/workflows/deploy.yml", "docs/deploy.md"):
-        installs = [
-            line for line in (ROOT / filename).read_text().splitlines()
-            if "pip install" in line and "-r requirements.lock" in line
-        ]
-        assert installs, f"No lock install found in {filename}"
-        for line in installs:
-            assert "--require-hashes" in line, f"{filename}: {line}"
-            assert "--uploaded-prior-to" not in line, f"{filename}: {line}"
+def test_image_lock_install_requires_hashes() -> None:
+    installs = [
+        line for line in (ROOT / "Dockerfile").read_text().splitlines()
+        if "pip install" in line and "-r requirements.lock" in line
+    ]
+    assert installs, "No lock install found in Dockerfile"
+    for line in installs:
+        assert "--require-hashes" in line
+        assert "--only-binary=:all:" in line
+        assert "--uploaded-prior-to" not in line
+
+
+def test_deploy_workflow_does_not_pip_install() -> None:
+    assert "pip install" not in (ROOT / ".gitea/workflows/deploy.yml").read_text()
+
+
+def test_dockerfile_base_images_pinned_by_digest() -> None:
+    images = [
+        line for line in (ROOT / "Dockerfile").read_text().splitlines()
+        if line.startswith("FROM ")
+    ]
+    assert images, "No base image found in Dockerfile"
+    assert all(re.search(r"@sha256:[0-9a-f]{64}(?:\s|$)", line) for line in images)
 
 
 def test_requirements_lock_is_fully_hashed() -> None:

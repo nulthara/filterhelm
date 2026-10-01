@@ -1,0 +1,14 @@
+#!/bin/sh
+# Installed root-owned to /usr/local/sbin/. The runner may run it only through sudo.
+set -eu
+
+image=localhost/pihole-manager
+
+# Keep the running image for one-step rollback.
+if podman image exists "$image:latest"; then
+    podman tag "$image:latest" "$image:previous"
+fi
+
+podman build --pull=missing --tag "$image:latest" /opt/pihole-manager
+systemctl restart pihole-manager.service
+podman image prune --force

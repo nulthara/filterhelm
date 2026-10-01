@@ -1,0 +1,25 @@
+# Portable install. Build from a clone: docker compose up -d --build
+services:
+  pihole-manager:
+    build: .
+    image: localhost/pihole-manager:latest
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8420:8420"
+    environment:
+      PIHOLE_MANAGER_AUTH_MODE: local
+      # Loopback HTTP only. Behind an HTTPS proxy, set this to "true" and add the public host below.
+      PIHOLE_MANAGER_COOKIE_SECURE: "false"
+      PIHOLE_MANAGER_TRUSTED_HOSTS: localhost,127.0.0.1
+    volumes:
+      - pihole-manager-data:/data
+
+volumes:
+  pihole-manager-data:
