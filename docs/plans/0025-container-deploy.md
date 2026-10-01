@@ -6,6 +6,10 @@ Author: Claude (architect)
 Date: 2026-09-30
 Revision: 2 (2026-10-01) — adversarial review found that a failed deploy overwrote the
 rollback image and that cutover could carry a host data path into the container.
+Fix (2026-10-01, cutover): the first host build failed because an unprivileged LXC has no
+`/dev/net/tun`. Podman 5.4.2 treats that LXC's root as rootless for build steps and sets
+up `pasta`, which needs the device. The redeploy script now builds with `--network=host`.
+Build steps gain no network access beyond what the `Network=host` container already has.
 
 ## Problem
 
@@ -245,7 +249,8 @@ Alternatives rejected:
        return 1
    }
 
-   podman build --pull=missing --tag "$image:latest" /opt/pihole-manager
+   # Unprivileged LXCs lack /dev/net/tun, so build steps use host networking.
+   podman build --network=host --pull=missing --tag "$image:latest" /opt/pihole-manager
 
    # Promote to last-known-good only after the new container answers.
    if systemctl restart pihole-manager.service && healthy; then

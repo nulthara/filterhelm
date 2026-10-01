@@ -12,7 +12,8 @@ healthy() {
     return 1
 }
 
-podman build --pull=missing --tag "$image:latest" /opt/pihole-manager
+# Unprivileged LXCs lack /dev/net/tun, so build steps use host networking.
+podman build --network=host --pull=missing --tag "$image:latest" /opt/pihole-manager
 
 # Promote to last-known-good only after the new container answers.
 if systemctl restart pihole-manager.service && healthy; then

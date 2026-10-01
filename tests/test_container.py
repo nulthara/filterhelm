@@ -101,7 +101,7 @@ def test_redeploy_promotes_after_healthy_probe(tmp_path: Path) -> None:
     result, log = _run_redeploy(tmp_path)
     assert result.returncode == 0
     assert log == [
-        "podman build --pull=missing --tag localhost/pihole-manager:latest /opt/pihole-manager",
+        "podman build --network=host --pull=missing --tag localhost/pihole-manager:latest /opt/pihole-manager",
         "systemctl restart pihole-manager.service",
         "curl -fsS -o /dev/null http://127.0.0.1:8420/api/auth/status",
         "podman tag localhost/pihole-manager:latest localhost/pihole-manager:good",
@@ -144,5 +144,5 @@ def test_redeploy_stops_on_build_failure(tmp_path: Path) -> None:
     result, log = _run_redeploy(tmp_path, build_result=1)
     assert result.returncode != 0
     assert log == [
-        "podman build --pull=missing --tag localhost/pihole-manager:latest /opt/pihole-manager",
+        "podman build --network=host --pull=missing --tag localhost/pihole-manager:latest /opt/pihole-manager",
     ]
