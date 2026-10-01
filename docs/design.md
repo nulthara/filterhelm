@@ -523,35 +523,38 @@ is a local `git reset --hard` + service restart, with no SSH keys or
 cross-host access needed for the deployment steps. See the runbook for
 setup details, still unexecuted as of this writing.
 
-Deployment shape (systemd, not Docker):
+Deployment shape: a non-root container managed by a rootful Podman Quadlet.
+The image uses the committed frontend bundle and hash-pinned Python dependencies.
+The Quadlet generates `pihole-manager.service`; see [deploy.md](deploy.md) for
+bootstrap, cutover, and rollback instructions.
 
 ```ini
-# /etc/systemd/system/pihole-manager.service
-[Unit]
-Description=Pi-hole Manager
-
-[Service]
-WorkingDirectory=/opt/pihole-manager
-ExecStart=/opt/pihole-manager/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8420
-Restart=on-failure
-User=pihole-manager
-
-[Install]
-WantedBy=multi-user.target
+[Container]
+Image=localhost/pihole-manager:latest
+ContainerName=pihole-manager
+Pull=never
+Network=host
+Volume=/var/lib/pihole-manager:/data
+EnvironmentFile=/etc/pihole-manager/env
+Environment=PIHOLE_MANAGER_DATA=/data
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
 ```
 
 Note the bind address flips from `127.0.0.1` (§7's original workstation
 assumption) to `0.0.0.0` here: this is a hosted service that other LAN
 devices reach through the reverse proxy. The proxy handles LAN-facing
 exposure and access control, while the app binds its host's interface.
+`Network=host` preserves this listen posture and real client addresses.
 
 **Credential storage on this host:** `app/config.py`'s `CredentialStore`
 already handles this — it tries the OS keyring first and falls back to a
-`chmod 600` YAML file under `~/.config/pihole-manager/` (root's home, if the
-service runs as root; a dedicated `pihole-manager` system user, if not) when
-no keyring backend exists, which is the expected case on a headless LXC.
-That fallback path, not the keyring path, is what actually runs once this is
-hosted rather than run from a developer's desktop session.
+`chmod 600` YAML file at `/var/lib/pihole-manager/secrets.yml` on the host
+(`/data/secrets.yml` in the container) when no keyring backend exists, which is
+the expected case on a headless LXC. That fallback path, not the keyring path,
+is what actually runs once this is hosted rather than run from a developer's
+desktop session.
 
 ---
 
@@ -642,8 +645,8 @@ quarter's.
   (e.g. via Pi-hole's own web UI). A fix would likely mean either an
   idempotent/no-op-on-identical-state add, or optimistic concurrency via
   `date_modified`/`date_updated`, applied to both features together.
-- **TODO — distribution:** provide a container/Compose deployment or versioned
-  release archive with compiled frontend assets.
+- **Distribution:** the container image and Compose example ship with the committed
+  frontend assets. A versioned release archive is still open.
 - **TODO — project operations:** add contribution and security policies,
   screenshots, issue templates, automated checks, upgrade notes, and backup
   instructions.

@@ -35,17 +35,24 @@ Run the application:
 
 Then open `http://127.0.0.1:8420/`.
 
+Or with containers:
+
+```bash
+docker compose up -d --build
+docker compose exec pihole-manager python -m app.auth set-password --username admin
+```
+
+You can also use `podman compose`. Then open `http://127.0.0.1:8420/`.
+For production deployment, see [docs/deploy.md](docs/deploy.md).
+
 ### Authentication
 
 Authentication is required and defaults to local mode. Before the first
-login, create or reset an administrator from the server console. This command
-must run as the same `pihole-manager` user that runs the service, not as root
-or any other account as that would set it in account's home/data directory instead:
+login, create or reset an administrator from the server console. In production,
+run it inside the container so its user and `/data` directory match the service:
 
 ```bash
-sudo -u pihole-manager \
-  /opt/pihole-manager/.venv/bin/python -m app.auth \
-  set-password --username admin
+sudo podman exec -it pihole-manager python -m app.auth set-password --username admin
 ```
 
 Local passwords are Argon2id-hashed in the private `auth.db` data file.

@@ -142,7 +142,22 @@ systemctl status gitea-runner.service --no-pager
 Confirm it shows up: repo **Settings → Actions → Runners** should list
 `pihole-manager-runner` as online/idle.
 
-## 4. Bootstrap the deploy target
+## 4. Prepare the host
+
+Production uses rootful Podman in the deploy LXC. On the hypervisor, enable
+nesting and restart the container:
+
+```bash
+pct set <vmid> --features nesting=1
+pct reboot <vmid>
+```
+
+On the deploy host, install Podman and confirm the runtime works:
+
+```bash
+sudo apt install podman
+sudo podman info
+```
 
 One-time, by hand — the workflow only ever updates this in place afterward,
 it doesn't create it. Create a read-only SSH deploy key for the runner first:
@@ -175,10 +190,6 @@ express a custom SSH port:
 sudo mkdir -p /opt/pihole-manager
 sudo chown gitea-runner:gitea-runner /opt/pihole-manager
 sudo -u gitea-runner git clone ssh://git@git.example.com:2222/example/pihole-manager.git /opt/pihole-manager
-cd /opt/pihole-manager
-sudo -u gitea-runner python3 -m venv .venv
-sudo -u gitea-runner ./.venv/bin/pip install --require-hashes -r requirements.lock
-sudo -u gitea-runner ./.venv/bin/pip install --no-deps --no-build-isolation -e .
 ```
 
 If the checkout already exists with the old HTTP origin, repair it in place:
@@ -193,68 +204,169 @@ The React/Ant Design production bundle is committed in `app/static/ui`.
 Node.js is intentionally not required on the deploy host; frontend builds happen on a
 development machine and the generated assets deploy with the repository.
 
-Create the app's own service user (separate from `gitea-runner` —
-principle of least privilege again: the thing that runs untrusted-ish CI
-steps and the thing that runs the app itself don't need to be the same
-account):
+## 5. Install the container units
+
+Install the environment file, data directory, Quadlet, and redeploy script by hand:
 
 ```bash
-sudo useradd --system --shell /usr/sbin/nologin pihole-manager
-```
-
-Then the systemd unit from `docs/design.md` §12, adjusted for the real
-paths and users decided here:
-
-```bash
-sudo tee /etc/systemd/system/pihole-manager.service >/dev/null <<'EOF'
-[Unit]
-Description=Pi-hole Manager
-
-[Service]
-WorkingDirectory=/opt/pihole-manager
-ExecStart=/opt/pihole-manager/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8420
-Environment=PIHOLE_MANAGER_AUTH_MODE=local
-Environment=PIHOLE_MANAGER_COOKIE_SECURE=true
-# Replace manager.example with the public hostname presented by the proxy.
-Environment=PIHOLE_MANAGER_TRUSTED_HOSTS=manager.example,127.0.0.1
-# Optional: exact public hostname, IP, and CIDR entries (private LANs need no entry)
-# Environment=PIHOLE_MANAGER_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
-Restart=on-failure
-User=pihole-manager
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
+sudo install -d -m 0700 /etc/pihole-manager
+sudo install -m 0600 /dev/null /etc/pihole-manager/env   # then edit; see below
+sudo install -d -o 10001 -g 10001 -m 0700 /var/lib/pihole-manager
+sudo install -o root -g root -m 0644 /opt/pihole-manager/deploy/pihole-manager.container /etc/containers/systemd/
+sudo install -o root -g root -m 0755 /opt/pihole-manager/deploy/pihole-manager-redeploy /usr/local/sbin/
 sudo systemctl daemon-reload
-sudo -u pihole-manager /opt/pihole-manager/.venv/bin/python -m app.auth set-password --username admin
-sudo systemctl enable --now pihole-manager.service
-curl -fsS http://127.0.0.1:8420/api/auth/status
 ```
 
-## 5. The one sudoers rule the workflow needs
+Edit `/etc/pihole-manager/env` as root. Use `KEY=value` lines, without the
+systemd unit's `Environment=` prefix:
 
-`gitea-runner` owns the checkout and can `pip install` freely (it owns
-`/opt/pihole-manager`), but restarting the app runs as `pihole-manager`, a
-different account — so `gitea-runner` needs exactly one narrow,
-passwordless sudo rule, nothing broader:
+```ini
+PIHOLE_MANAGER_AUTH_MODE=local
+PIHOLE_MANAGER_COOKIE_SECURE=true
+# Replace manager.example with the public hostname presented by the proxy.
+PIHOLE_MANAGER_TRUSTED_HOSTS=manager.example,127.0.0.1
+# Optional: exact public hostname, IP, and CIDR entries (private LANs need no entry)
+# PIHOLE_MANAGER_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
+```
+
+Do not set `PIHOLE_MANAGER_DATA` in the environment file: the Quadlet pins it
+to `/data`, taking precedence over the environment file.
+
+The environment file is root-owned, mode `0600`. The host data directory is
+owned by `10001:10001`, mode `0700`, and mounted at `/data` in the container.
+Production uses host networking, preserving real client addresses for proxy
+trust, audit logs, and pre-authentication rate limits.
+
+The installed script and Quadlet are root-owned. Edits to `deploy/` in git take
+effect only after this installation step is re-run by an administrator. When
+reinstalling them, preserve the existing environment file rather than replacing
+it with the empty template.
+
+## 6. The one sudoers rule
+
+The runner owns the checkout but receives only this passwordless sudo command:
 
 ```bash
 sudo visudo -f /etc/sudoers.d/gitea-runner-pihole-manager
 ```
-```
-gitea-runner ALL=(root) NOPASSWD: /usr/bin/systemctl restart pihole-manager.service
+
+```text
+gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/pihole-manager-redeploy
 ```
 
-Deliberately scoped to that one exact command — not `ALL`, not a wildcard
-`systemctl restart *` that would let a compromised runner restart anything
-else on the box.
+The workflow calls the script without arguments. The script builds the image
+from `/opt/pihole-manager`, restarts `pihole-manager.service`, and probes
+`/api/auth/status`. A passing probe promotes the image to `:good`; a failed
+restart or probe rolls back to `:good` when it exists and fails the deploy.
+A failed build exits before restart, leaving the running container alone. The
+runner is not in a container-runtime group: runtime access would be root-equivalent. It cannot
+rewrite the installed root-owned script or Quadlet through a pushed repo edit.
 
-## 6. First deploy
+## 7. First start
+
+```bash
+sudo /usr/local/sbin/pihole-manager-redeploy
+sudo podman exec -it pihole-manager python -m app.auth set-password --username admin
+curl -fsS http://127.0.0.1:8420/api/auth/status
+```
+
+A Quadlet unit is not `systemctl enable`d. Its `[Install]` section is applied by
+the generator, producing `pihole-manager.service` for boot and normal service
+management. Podman auto-update is not enabled; deployments are initiated by
+pushes to `main`.
+
+## 8. Cutover from the systemd install
+
+For a host already running the venv unit, perform this manual cutover before
+merging the container branch to `main`:
+
+0. Put the new files on the host first. With the feature branch pushed, run:
+
+   ```bash
+   sudo -u gitea-runner git -C /opt/pihole-manager fetch origin feature/0025-container-deploy
+   sudo -u gitea-runner git -C /opt/pihole-manager checkout --detach FETCH_HEAD
+   ```
+
+   The next deploy run resets the checkout to `origin/main`.
+
+1. Find the current data directory. Read the unit's `PIHOLE_MANAGER_DATA` from:
+
+   ```bash
+   systemctl show -p Environment pihole-manager.service
+   getent passwd pihole-manager
+   ```
+
+   If the unit does not set it, use `<home of pihole-manager>/.config/pihole-manager`.
+   Confirm it holds `auth.db`, `instances.yml`, and `secrets.yml`. Save the old
+   unit and sudoers rule for rollback.
+
+2. Complete §4–§6, copying the old unit's `Environment=` values into
+   `/etc/pihole-manager/env` as `KEY=value` lines, except `PIHOLE_MANAGER_DATA`.
+   Step 1 already used that value to find the data to copy.
+
+3. Stop and remove the old unit:
+
+   ```bash
+   sudo systemctl disable --now pihole-manager.service
+   sudo rm /etc/systemd/system/pihole-manager.service
+   sudo systemctl daemon-reload
+   ```
+
+   A unit file in `/etc/systemd/system` overrides the Quadlet's generated unit
+   of the same name, so it must be removed before the first redeploy.
+
+4. Copy the data, leaving the old directory in place:
+
+   ```bash
+   sudo cp -a <old data dir>/. /var/lib/pihole-manager/
+   sudo chown -R 10001:10001 /var/lib/pihole-manager
+   ```
+
+5. Run §7's redeploy command and curl probe. Confirm the container data path
+   and migrated files:
+
+   ```bash
+   sudo podman exec pihole-manager printenv PIHOLE_MANAGER_DATA
+   sudo podman exec pihole-manager ls -l /data
+   ```
+
+   The first command must print `/data`, and the second must list the migrated
+   files. Then sign in with the existing account. Skip `set-password`.
+
+6. Merge to `main` only after the cutover succeeds. After the next push deploys
+   green, remove the old venv:
+
+   ```bash
+   sudo rm -rf /opt/pihole-manager/.venv
+   ```
+
+## 9. Rollback
+
+A failed restart or probe automatically restores `:good` when it exists, and
+the deploy run fails. Failed deploys and retries never overwrite `:good`.
+
+To restore the last good image manually:
+
+```bash
+sudo podman tag localhost/pihole-manager:good localhost/pihole-manager:latest
+sudo systemctl restart pihole-manager.service
+```
+
+Only a passing probe promotes an image to `:good`. For an image that passes
+the probe but misbehaves, revert the commit on `main` and push.
+
+To abandon containers, stop the service, remove
+`/etc/containers/systemd/pihole-manager.container`, restore the saved old unit
+and sudoers rule, and recreate the venv from the old runbook in git history.
+Reload systemd and enable/start the restored service. The old data directory
+is untouched by cutover; changes made after cutover are in the container's
+host data directory.
+
+## 10. First deploy
 
 Push any commit to `main` (or re-push the current HEAD) and watch the
-**Actions** tab on the `pihole-manager` repo. Expect four green steps: pull,
-install, restart, confirm-up. If "Confirm it came back up" fails, the
+**Actions** tab on the `pihole-manager` repo. Expect three green steps: pull,
+build and restart, confirm-up. If "Confirm it came back up" fails, the
 service didn't come back within ~20s — check
 `journalctl -u pihole-manager -n 50 --no-pager` before assuming the workflow
 itself is wrong.
@@ -262,5 +374,5 @@ itself is wrong.
 Once green, confirm from the LAN (not just `127.0.0.1` on the box itself):
 
 ```bash
-curl -sI http://<deploy-host-ip>:8420/app/ | head -1
+curl -sI http://192.0.2.20:8420/app/ | head -1
 ```

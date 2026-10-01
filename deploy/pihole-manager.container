@@ -1,0 +1,24 @@
+# Installed root-owned to /etc/containers/systemd/. See docs/deploy.md.
+[Unit]
+Description=Pi-hole Manager
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=localhost/pihole-manager:latest
+ContainerName=pihole-manager
+Pull=never
+Network=host
+Volume=/var/lib/pihole-manager:/data
+EnvironmentFile=/etc/pihole-manager/env
+# Wins over EnvironmentFile; the volume is mounted only at /data.
+Environment=PIHOLE_MANAGER_DATA=/data
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

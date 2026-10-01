@@ -1,0 +1,14 @@
+.git
+.gitea
+.venv
+venv
+**/__pycache__
+*.egg-info
+.pytest_cache
+frontend/node_modules
+data
+.env
+.claude
+.superpowers
+.private-denylist.toml
+before_public.md
