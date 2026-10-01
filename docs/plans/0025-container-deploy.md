@@ -4,6 +4,8 @@ Status: in-progress           <!-- draft | approved | in-progress | in-review | 
 Branch: feature/0025-container-deploy
 Author: Claude (architect)
 Date: 2026-09-30
+Revision: 2 (2026-10-01) — adversarial review found that a failed deploy overwrote the
+rollback image and that cutover could carry a host data path into the container.
 
 ## Problem
 
@@ -80,10 +82,21 @@ compromised runner cannot rewrite what root executes. The runner still controls 
 `Dockerfile` and build context. That is accepted, because a rootful `podman build` runs
 build steps in an unprivileged container and the runner already controls the app it ships.
 
-**Rollback.** The redeploy script re-tags the running image as
-`localhost/pihole-manager:previous` before building. Rolling back is one re-tag and a
-restart. The cutover copies the old data dir and leaves the original in place, so a full
-return to the systemd unit stays possible.
+**Rollback.** The redeploy script builds `:latest`, restarts, and probes
+`/api/auth/status`. Only a passing probe promotes the image to `localhost/pihole-manager:good`.
+A failed probe re-tags `:good` as `:latest`, restarts, and exits non-zero, so the workflow
+fails and production returns to the last image that answered. Failed deploys and retries
+never touch `:good`. An image that passes the probe but misbehaves is rolled back the
+normal way, by reverting the commit on `main`. The cutover copies the old data dir and
+leaves the original in place, so a full return to the systemd unit stays possible.
+
+Revision 1 tagged the running image `:previous` before every build. A failed deploy
+followed by a retry then overwrote `:previous` with the broken image.
+
+**Data path is pinned.** The Quadlet sets `Environment=PIHOLE_MANAGER_DATA=/data`.
+Podman gives `--env` precedence over `--env-file` regardless of flag order (checked on
+Podman 6.1.2), so a stray `PIHOLE_MANAGER_DATA` in `/etc/pihole-manager/env` cannot point
+the app at an unmounted path. The cutover runbook also says not to copy that key.
 
 Alternatives rejected:
 - Keeping the venv deploy and adding the container only as a portable option. The user
@@ -98,8 +111,9 @@ Alternatives rejected:
 - `.dockerignore` — new. Excludes VCS, venvs, node_modules, data, and local secrets from
   the build context.
 - `compose.yaml` — new. Portable build-from-source example.
-- `deploy/pihole-manager.container` — new. Production Quadlet unit.
-- `deploy/pihole-manager-redeploy` — new, mode 0755 in git. Build-and-restart script.
+- `deploy/pihole-manager.container` — new. Production Quadlet unit. Pins the data path.
+- `deploy/pihole-manager-redeploy` — new, mode 0755 in git. Build, restart, probe,
+  promote or roll back.
 - `.gitea/workflows/deploy.yml` — replace the install and restart steps with the redeploy
   script.
 - `docs/deploy.md` — rewrite §4–§6 for the container bootstrap. Add a cutover section and a
@@ -111,7 +125,7 @@ Alternatives rejected:
 - `tests/test_supply_chain.py` — move the lock-install check from the workflow to the
   `Dockerfile`, and add the digest-pin check.
 - `tests/test_container.py` — new. Guards the workflow ↔ sudoers ↔ script coupling and the
-  Quadlet's no-pull, no-auto-update settings.
+  Quadlet settings, and runs the redeploy script against stub commands.
 
 ## Steps
 
@@ -197,6 +211,8 @@ Alternatives rejected:
    Network=host
    Volume=/var/lib/pihole-manager:/data
    EnvironmentFile=/etc/pihole-manager/env
+   # Wins over EnvironmentFile; the volume is mounted only at /data.
+   Environment=PIHOLE_MANAGER_DATA=/data
    ReadOnly=true
    NoNewPrivileges=true
    DropCapability=ALL
@@ -221,18 +237,36 @@ Alternatives rejected:
 
    image=localhost/pihole-manager
 
-   # Keep the running image for one-step rollback.
-   if podman image exists "$image:latest"; then
-       podman tag "$image:latest" "$image:previous"
-   fi
+   healthy() {
+       for _ in 1 2 3 4 5 6 7 8 9 10; do
+           curl -fsS -o /dev/null http://127.0.0.1:8420/api/auth/status && return 0
+           sleep 2
+       done
+       return 1
+   }
 
    podman build --pull=missing --tag "$image:latest" /opt/pihole-manager
-   systemctl restart pihole-manager.service
-   podman image prune --force
+
+   # Promote to last-known-good only after the new container answers.
+   if systemctl restart pihole-manager.service && healthy; then
+       podman tag "$image:latest" "$image:good"
+       podman image prune --force
+       exit 0
+   fi
+
+   echo "pihole-manager failed its health probe" >&2
+   if podman image exists "$image:good"; then
+       echo "rolling back to $image:good" >&2
+       podman tag "$image:good" "$image:latest"
+       systemctl restart pihole-manager.service
+   fi
+   exit 1
    ```
 
    The script takes no arguments and reads no environment. A failed build exits before the
-   restart, which leaves the running container alone.
+   restart, which leaves the running container alone. A failed restart or probe rolls back
+   to `:good` when it exists, and the script exits 1 either way. `podman image prune`
+   removes only untagged images, so `:good` survives it.
 
 6. **`.gitea/workflows/deploy.yml`.**
    - Keep "Pull latest main" unchanged.
@@ -270,8 +304,9 @@ Alternatives rejected:
      Show the `env` file contents as `KEY=value` lines carrying today's `Environment=`
      values (`PIHOLE_MANAGER_AUTH_MODE`, `PIHOLE_MANAGER_COOKIE_SECURE`,
      `PIHOLE_MANAGER_TRUSTED_HOSTS` including `127.0.0.1`, and an optional commented
-     `PIHOLE_MANAGER_PUBLIC_ALLOWLIST`). Say that edits to `deploy/` in git take effect
-     only after this step is re-run.
+     `PIHOLE_MANAGER_PUBLIC_ALLOWLIST`). Say not to set `PIHOLE_MANAGER_DATA` there,
+     because the Quadlet pins it to `/data`. Say that edits to `deploy/` in git take
+     effect only after this step is re-run.
    - **§6 The one sudoers rule.** Replace today's rule with exactly:
      ```
      gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/pihole-manager-redeploy
@@ -291,19 +326,23 @@ Alternatives rejected:
         `<home of pihole-manager>/.config/pihole-manager` from `getent passwd pihole-manager`.
         Confirm it holds `auth.db`, `instances.yml`, and `secrets.yml`.
      2. Complete §4–§6, copying the unit's `Environment=` lines into
-        `/etc/pihole-manager/env`.
+        `/etc/pihole-manager/env`, except `PIHOLE_MANAGER_DATA`. Step 1 already used
+        that value to find the data to copy.
      3. `sudo systemctl disable --now pihole-manager.service`, then
         `sudo rm /etc/systemd/system/pihole-manager.service` and `sudo systemctl daemon-reload`.
         State why: a unit file in `/etc/systemd/system` overrides the Quadlet's
         generated unit of the same name.
      4. `sudo cp -a <old data dir>/. /var/lib/pihole-manager/` and
         `sudo chown -R 10001:10001 /var/lib/pihole-manager`. Leave the old dir in place.
-     5. Run §7's redeploy and curl, then sign in with the existing account. Skip
-        `set-password`.
+     5. Run §7's redeploy and curl. Confirm `sudo podman exec pihole-manager printenv PIHOLE_MANAGER_DATA`
+        prints `/data`, and `sudo podman exec pihole-manager ls -l /data` lists the migrated
+        files. Then sign in with the existing account. Skip `set-password`.
      6. After the next push deploys green, `sudo rm -rf /opt/pihole-manager/.venv`.
    - **§9 Rollback.**
-     - Bad image: `sudo podman tag localhost/pihole-manager:previous localhost/pihole-manager:latest`,
+     - Failed probe: automatic. The redeploy script restores `:good` and the deploy run fails.
+     - Manual restore of the last good image: `sudo podman tag localhost/pihole-manager:good localhost/pihole-manager:latest`,
        then `sudo systemctl restart pihole-manager.service`.
+     - An image that passes the probe but misbehaves: revert the commit on `main` and push.
      - Abandon containers: remove the Quadlet file, restore the old unit and sudoers rule,
        and recreate the venv from the old runbook in git history. The old data dir is
        untouched.
@@ -331,6 +370,16 @@ Alternatives rejected:
 
 10. **Tests.** See the Tests section.
 
+11. **Revision 2 delta.** The branch already carries revision 1 as commit `dcee7e2`.
+    Change only these, on top of it:
+    - `deploy/pihole-manager-redeploy` — replace with step 5's script.
+    - `deploy/pihole-manager.container` — add step 4's `Environment=` line and comment.
+    - `docs/deploy.md` — §5 env-file note, §8 steps 2 and 5, and §9, per step 7. Remove
+      every `:previous` mention. In §6, say that the script probes and rolls back.
+    - `docs/design.md` — if its Quadlet block lists `[Container]` keys, add the
+      `Environment=` line.
+    - `tests/test_container.py` — the revision 2 tests below.
+
 ## Contracts
 
 No API, `frontend/src/api.ts`, or DB change.
@@ -340,9 +389,9 @@ Deployment contracts, which must agree across files:
 | Item | Value | Files that must agree |
 | --- | --- | --- |
 | Redeploy command | `/usr/local/sbin/pihole-manager-redeploy` | `deploy.yml`, `docs/deploy.md` sudoers line, script header |
-| Image name | `localhost/pihole-manager:latest` (rollback `:previous`) | script, Quadlet `Image=`, `compose.yaml` `image:` |
+| Image name | `localhost/pihole-manager:latest` (last-known-good `:good`) | script, Quadlet `Image=`, `compose.yaml` `image:` |
 | Systemd unit | `pihole-manager.service` (generated from `pihole-manager.container`) | script, docs |
-| Container data path | `/data`, via `PIHOLE_MANAGER_DATA` | `Dockerfile`, Quadlet `Volume=`, `compose.yaml` |
+| Container data path | `/data`, via `PIHOLE_MANAGER_DATA` | `Dockerfile`, Quadlet `Volume=` and `Environment=`, `compose.yaml` |
 | Host data path | `/var/lib/pihole-manager`, owner `10001:10001`, mode `0700` | Quadlet, docs |
 | Env file | `/etc/pihole-manager/env`, root `0600` | Quadlet, docs |
 | Listen | `0.0.0.0:8420` in the container; host network in production | `Dockerfile` `CMD`, Quadlet |
@@ -376,6 +425,26 @@ Existing env keys (`PIHOLE_MANAGER_*`) are unchanged in name and meaning.
   last `RUN`, and `compose.yaml` and the Quadlet both set a read-only root
   (`read_only: true` / `ReadOnly=true`).
 
+Revision 2 adds to `tests/test_container.py`:
+- `test_quadlet_pins_data_path` — the Quadlet has `Environment=PIHOLE_MANAGER_DATA=/data`
+  and `Volume=/var/lib/pihole-manager:/data`.
+- Behaviour tests that run `deploy/pihole-manager-redeploy` with `sh` and a `tmp_path` bin
+  directory first on `PATH`. That directory holds stub `podman`, `systemctl`, `curl`, and
+  `sleep` scripts. Each stub appends its argv to a log file. Environment variables set the
+  stubs' exit codes: build result, `podman image exists` result, restart result, and
+  probe result. A shared helper writes the stubs.
+  - `test_redeploy_promotes_after_healthy_probe` — exit 0. The log shows build, restart,
+    `tag …:latest …:good`, then `image prune`.
+  - `test_redeploy_rolls_back_when_probe_fails` — with `:good` present, exit 1. The log has
+    `tag …:good …:latest` followed by a second restart, and never `tag …:latest …:good`.
+  - `test_redeploy_rolls_back_when_restart_fails` — restart stub fails on its first call.
+    Exit 1, and the log shows the rollback tag.
+  - `test_redeploy_without_good_image_fails_without_rollback` — `podman image exists`
+    fails. Exit 1, no `tag` call at all.
+  - `test_redeploy_stops_on_build_failure` — build fails. Exit non-zero, with no
+    `systemctl` and no `tag` calls in the log.
+- The revision 1 tests stay as they are.
+
 `tests/test_repo_hygiene.py` must pass unchanged over the new files.
 
 Codex has no network or container runtime in its sandbox (see memory). The image build
@@ -387,7 +456,8 @@ and smoke run are reviewer acceptance criteria, not Codex tests.
 2. **Diff before write** — not touched.
 3. **Gravity gated** — not touched.
 4. **No background scheduler** — the Quadlet has no `AutoUpdate=`, healthcheck, or timer,
-   and the image has no entrypoint beyond uvicorn. Podman's auto-update timer is never
+   and the image has no entrypoint beyond uvicorn. The automatic rollback runs only inside
+   a deploy that a push started, and it restarts only this app, never a Pi-hole. Podman's auto-update timer is never
    enabled. `test_quadlet_never_pulls_or_auto_updates` guards this.
 5. **Credentials stay in the backend** — `secrets.yml` and `auth.db` live in the host
    volume, which is root/10001 `0700`. `.dockerignore` keeps `data/`, `.env`, and local
@@ -423,5 +493,9 @@ and smoke run are reviewer acceptance criteria, not Codex tests.
 - [ ] `docker compose config` (or `podman compose config`) parses `compose.yaml`.
 - [ ] `deploy.yml`, the sudoers line in `docs/deploy.md`, and the script path agree
       character for character.
+- [ ] The redeploy behaviour tests pass, and `grep -rn ':previous'` over the branch finds
+      nothing outside this plan.
+- [ ] Reviewer runs the review image with `--env-file` holding `PIHOLE_MANAGER_DATA=/elsewhere`
+      plus `-e PIHOLE_MANAGER_DATA=/data`, and `printenv PIHOLE_MANAGER_DATA` prints `/data`.
 - [ ] `docs/deploy.md` §8 orders the steps so the host checks out the feature branch
       first, removes the old unit before the first redeploy, and merges to `main` last.
