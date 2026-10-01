@@ -1,6 +1,6 @@
 # 0025 — Container image and Podman production deploy
 
-Status: in-progress           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped           <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0025-container-deploy
 Author: Claude (architect)
 Date: 2026-09-30
