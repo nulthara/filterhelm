@@ -15,6 +15,9 @@ invariants") it brushes up against, if any.
 
 **Shipped since these notes were first written** (moved out of the backlog):
 
+- Block-list actions match exact stored addresses first, preserve userinfo and fragments
+  in normalization fallback, refuse ambiguity, and report collapsed bulk aliases — plan 0027.
+
 - Per-instance FTL service actions (Restart DNS, Flush logs, Flush network table),
   confirmed and audited — plan 0026 (design.md §5.1).
 
@@ -138,44 +141,10 @@ Nothing is outstanding in this section.
 
 ## 6. Bugs / papercuts noticed in use
 
-- **`_adlist_key` is not injective, so a bulk or single-record action can hit the
-  wrong block list.** `_adlist_key` (`app/routes/api.py:141`) reads `parsed.hostname`,
-  which drops userinfo, and sets `fragment=""`. Two stored addresses that differ only
-  in credentials or fragment collapse to one key. `_find_adlist` takes the first
-  `next(...)` match and `adlist_bulk` builds `current` with `setdefault`, so with
-  `https://alice:one@example.com/list` and `https://bob:two@example.com/list` both
-  stored, deleting the second deletes the first and reports `success: True` under the
-  requested address. Selecting both collapses the batch to one delete and one result
-  row, and the dropped selection produces no error row. Found by an adversarial review
-  of plan 0012; reproduced against `adlist_bulk` with a fake client.
-
-  **Pre-existing, and reachable on `main`.** `_adlist_key` is unchanged by 0012 apart
-  from its parse guard, and `main` accepts a clean `https://example.com/list` that keys
-  onto a stored credential-bearing record, so `main` deletes the wrong list through that
-  path today. What 0012 changed is the reverse direction — dropping the update/delete/bulk
-  validators lets a submitted credential- or fragment-bearing string reach the same lossy
-  match, where `main` refused it with a 422. Harm needs two stored records sharing a key
-  either way. With one such record stored, 0012 matches it correctly and `main` 422s.
-
-  **Bounded by the add path.** `AdlistAddInput` still runs the full `screen_adlist_url`
-  and still rejects credentials and fragments, so this app cannot create a colliding
-  record. They arrive from the Pi-hole CLI, a teleporter import, or another tool.
-
-  **Why this needs a plan rather than a patch.** The obvious repair — preserve
-  credentials and fragment in the key, match exact stored addresses first — runs into two
-  behaviours that are deliberate. `test_adlist_match_ignores_a_normalized_trailing_slash`
-  (`tests/test_api.py:310`) relies on lossy matching for issue #8's Pi-hole normalization,
-  and `test_adlist_bulk_delete_dedupes_canonical_aliases` (`tests/test_api.py:1509`)
-  relies on it to collapse `.../block.txt` and `.../block.txt/` into a single delete.
-  Separating real identity from normalization is the decision to make. Candidate scope:
-  keep path and case normalization, preserve credentials and fragment, refuse an
-  ambiguous match across stored records instead of picking the first, and report a
-  collapsed bulk selection as an error row rather than dropping it. Touches invariant #2
-  (diff before write) — the wrong record is currently written without the user seeing it.
+Nothing is outstanding in this section.
 
 ---
 
 ## Suggested next pick
 
-The next pick is the **`_adlist_key` injectivity bug** in §6: it is a correctness
-problem on `main` today that can make an action mutate the wrong block list.
+No item is queued.
