@@ -15,6 +15,9 @@ invariants") it brushes up against, if any.
 
 **Shipped since these notes were first written** (moved out of the backlog):
 
+- Per-instance FTL service actions (Restart DNS, Flush logs, Flush network table),
+  confirmed and audited — plan 0026 (design.md §5.1).
+
 - Per-instance Teleporter config backup download, audited — plan 0023 (design.md §5.1).
 
 - In-app audit log viewer with instance, action, actor, and text filters — plan 0022 (design.md §5.11).
@@ -82,9 +85,6 @@ Nothing is outstanding in this section.
 
 ## 3. New confirmed mutations (same diff-before-write pattern, new action type)
 
-- **FTL service actions** — restart DNS resolver, flush logs
-  (`/api/action/*`). Same shape as the existing blocking pause/resume:
-  single-instance, explicitly confirmed, audited.
 - **Multi-user local accounts with roles.** Today there's one admin account
   set from the server console (README "Authentication"). A read-only
   viewer role, manageable from the Settings UI instead of the CLI, would
@@ -177,5 +177,5 @@ Nothing is outstanding in this section.
 
 ## Suggested next pick
 
-The next pick is **FTL service actions** in §3: restart the DNS resolver and flush
-logs through `/api/action/*`, with single-instance confirmation and auditing.
+The next pick is the **`_adlist_key` injectivity bug** in §6: it is a correctness
+problem on `main` today that can make an action mutate the wrong block list.

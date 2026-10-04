@@ -872,3 +872,79 @@ def test_get_teleporter_rejects_unparseable_toml(config):
     with pytest.raises(pihole_client.PiholeAPIError) as caught:
         pihole_client._check_teleporter_archive(data)
     assert str(caught.value) == "Teleporter archive has an unreadable pihole.toml"
+
+
+@pytest.mark.parametrize(('action', 'path'), [
+    ('restart_dns', '/api/action/restartdns'),
+    ('flush_logs', '/api/action/flush/logs'),
+    ('flush_network', '/api/action/flush/network'),
+])
+def test_run_action_posts_to_ftl_action_path(monkeypatch, action, path):
+    monkeypatch.setattr(pihole_client, 'resolve_instance_destination', private_destination)
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={'status': 'success'})
+
+    client = pihole_client.PiholeClient('https://pihole.lan', 'secret')
+    client._client.close()
+    client._client = httpx.Client(transport=httpx.MockTransport(respond), base_url='https://pihole.lan')
+    client._session = Session('session', 'csrf')
+    try:
+        assert client.run_action(action) is None
+    finally:
+        client._client.close()
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == 'POST'
+    assert request.url.path == path
+    assert request.headers['X-FTL-SID'] == 'session'
+    assert request.headers['X-FTL-CSRF'] == 'csrf'
+    assert request.content == b''
+
+
+def test_run_action_403_names_allow_destructive(monkeypatch):
+    monkeypatch.setattr(pihole_client, 'resolve_instance_destination', private_destination)
+    client = pihole_client.PiholeClient('https://pihole.lan', 'secret')
+    client._client.close()
+    client._client = httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(403, text='sensitive upstream details')),
+        base_url='https://pihole.lan',
+    )
+    client._session = Session('session', 'csrf')
+    try:
+        with pytest.raises(pihole_client.PiholeAPIError) as caught:
+            client.run_action('restart_dns')
+        assert caught.value.status_code == 403
+        assert 'webserver.api.allow_destructive' in str(caught.value)
+        assert 'sensitive upstream details' not in str(caught.value)
+    finally:
+        client._client.close()
+
+
+@pytest.mark.parametrize(('status_code', 'body'), [
+    (500, b'sensitive upstream details'),
+    (200, b'{"status":"error"}'),
+    (200, b'not JSON'),
+    (200, b'[]'),
+])
+def test_run_action_rejects_bad_responses(monkeypatch, status_code, body):
+    monkeypatch.setattr(pihole_client, 'resolve_instance_destination', private_destination)
+    client = pihole_client.PiholeClient('https://pihole.lan', 'secret')
+    client._client.close()
+    client._client = httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(status_code, content=body)),
+        base_url='https://pihole.lan',
+    )
+    client._session = Session('session', 'csrf')
+    try:
+        with pytest.raises(pihole_client.PiholeAPIError) as caught:
+            client.run_action('flush_logs')
+        if status_code == 500:
+            assert caught.value.status_code == 500
+            assert str(caught.value) == 'POST /api/action/flush/logs failed with HTTP 500'
+        else:
+            assert str(caught.value) == 'Pi-hole action endpoint returned an invalid response'
+    finally:
+        client._client.close()

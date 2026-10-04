@@ -120,6 +120,12 @@ building carefully rather than reaching for another off-the-shelf syncer:
   and that `pihole.toml` parses, so a damaged or incomplete archive returns 502.
   Each download is audited as `backup_download` with size and SHA-256, and fails with
   503 if the audit line cannot be written. Restore is not offered.
+- Each Instances row has a Service menu with Restart DNS, Flush logs, and Flush
+  network table. After confirmation, each action calls one `POST /api/action/*`
+  endpoint on that instance and is audited as `ftl_<action>`, with status
+  `unconfirmed` when the transport fails after the request was sent. A 403 means
+  the instance has `webserver.api.allow_destructive` off. Flush logs deletes the
+  last 24 hours of query history.
 - A dedicated status view shows the current blocking state and remaining
   pause timer. Blocking can be paused for 10 seconds, 30 seconds, 5 minutes,
   or indefinitely and resumed for one instance or a selected group. Group

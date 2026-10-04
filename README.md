@@ -123,7 +123,7 @@ example `Origin: https://manager.example` when calling that host.
 
 CSRF/origin enforcement remains active in both authentication modes.
 
-Authentication successes, failures, throttling, logouts, backup downloads, and
+Authentication successes, failures, throttling, logouts, backup downloads, FTL service actions, and
 configuration mutations are recorded in the private `0600` audit log. The log contains
 usernames, client addresses for login events, DNS names, IP addresses, and
 changed setting values; it never records passwords or session tokens.

@@ -85,12 +85,21 @@ import ipaddress
 import math
 import tomllib
 import zipfile
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
 
 from app.url_policy import ValidatedDestination, resolve_instance_destination
+
+
+FtlAction = Literal["restart_dns", "flush_logs", "flush_network"]
+
+_FTL_ACTION_PATHS: dict[str, str] = {
+    "restart_dns": "/api/action/restartdns",
+    "flush_logs": "/api/action/flush/logs",
+    "flush_network": "/api/action/flush/network",
+}
 
 
 TELEPORTER_MAX_BYTES = 64 * 1024 * 1024
@@ -992,6 +1001,25 @@ class PiholeClient:
                 raise PiholeAPIError(f"POST /api/action/gravity failed with HTTP {resp.status_code}")
             for _chunk in resp.iter_bytes():
                 pass
+
+    def run_action(self, action: FtlAction) -> None:
+        path = _FTL_ACTION_PATHS[action]
+        resp = self._client.post(path, headers=self._auth_headers())
+        if resp.status_code == 403:
+            raise PiholeAPIError(
+                "Pi-hole refused the action (HTTP 403); check webserver.api.allow_destructive on the instance",
+                status_code=403,
+            )
+        if resp.status_code != 200:
+            raise PiholeAPIError(
+                f"POST {path} failed with HTTP {resp.status_code}", status_code=resp.status_code
+            )
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise PiholeAPIError("Pi-hole action endpoint returned an invalid response") from exc
+        if not isinstance(body, dict) or body.get("status") != "success":
+            raise PiholeAPIError("Pi-hole action endpoint returned an invalid response")
 
     def patch_config(self, changes: dict[str, Any]) -> dict[str, Any]:
         """`changes` is a JSON merge patch — only the keys being changed,
