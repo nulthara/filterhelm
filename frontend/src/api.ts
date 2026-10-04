@@ -1,3 +1,10 @@
+export type FtlAction = 'restart_dns' | 'flush_logs' | 'flush_network'
+
+export interface FtlActionResult {
+  instance: string
+  action: FtlAction
+}
+
 export type BulkAction = 'enable' | 'disable' | 'delete'
 
 export interface BulkResult {
@@ -598,6 +605,11 @@ export const api = {
     request<{ status: Status; detail: string; versions: PiHoleVersions | null }>(`/api/instances/${encodeURIComponent(name)}/test`, { method: 'POST' }),
   downloadBackup: (name: string) =>
     download(`/api/instances/${encodeURIComponent(name)}/backup`, `pihole-${name}-backup.zip`, { method: 'POST' }),
+  runFtlAction: (name: string, action: FtlAction) =>
+    request<FtlActionResult>(
+      `/api/instances/${encodeURIComponent(name)}/actions/${action}`,
+      { method: 'POST' },
+    ),
   status: (options?: { background?: boolean }) =>
     request<{ instances: BlockingStatus[] }>(
       '/api/status',

@@ -14,6 +14,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from app import pihole_client
 from app.config import Instance
 from app.pihole_client import Adlist, BlockingState, PiholeAPIError, SystemInfo, FtlInfo, DatabaseInfo, SensorsInfo
 from app.main import app, index
@@ -36,6 +37,11 @@ class FakeCredentials:
 
 
 class FakePiholeClient:
+    actions: list[str] = []
+
+    def run_action(self, action):
+        self.actions.append(action)
+
     teleporter: bytes = b""
 
     def get_teleporter(self):
@@ -176,6 +182,7 @@ def setup_api(monkeypatch):
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr("pihole.toml", "# test config")
     FakePiholeClient.teleporter = buffer.getvalue()
+    FakePiholeClient.actions = []
     FakePiholeClient.info_calls = []
     FakePiholeClient.patches = []
     FakePiholeClient.added_hosts = []
@@ -2308,3 +2315,175 @@ def test_backup_filename_slugs_instance_name():
     now = datetime(2026, 9, 25, 14, 3, 7, tzinfo=timezone.utc)
     assert api._backup_filename("lab pihole/1", now) == "pihole-lab-pihole-1-20260925-140307Z.zip"
     assert api._backup_filename("../", now) == "pihole-instance-20260925-140307Z.zip"
+
+
+@pytest.mark.parametrize('action', ['restart_dns', 'flush_logs', 'flush_network'])
+def test_instance_action_runs_and_audits(monkeypatch, action):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, 'record', lambda *args: audits.append(args))
+    assert api.instance_action('pihole1', action) == {'instance': 'pihole1', 'action': action}
+    assert FakePiholeClient.actions == [action]
+    assert audits == [('pihole1', f'ftl_{action}', {}, {'status': 'success'})]
+
+
+def test_instance_action_unknown_instance_404(monkeypatch):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, 'record', lambda *args: audits.append(args))
+    with pytest.raises(HTTPException) as caught:
+        api.instance_action('missing', 'restart_dns')
+    assert caught.value.status_code == 404
+    assert caught.value.detail == 'Instance not found'
+    assert FakePiholeClient.actions == []
+    assert audits == []
+
+
+def test_instance_action_without_credential_409(monkeypatch):
+    _, credentials = setup_api(monkeypatch)
+    credentials.delete('pihole1')
+    audits = []
+    monkeypatch.setattr(api, 'record', lambda *args: audits.append(args))
+    with pytest.raises(HTTPException) as caught:
+        api.instance_action('pihole1', 'restart_dns')
+    assert caught.value.status_code == 409
+    assert caught.value.detail == 'No credential stored'
+    assert FakePiholeClient.actions == []
+    assert audits == []
+
+
+def test_instance_action_pihole_error_502(monkeypatch):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, 'record', lambda *args: audits.append(args))
+    detail = 'Pi-hole refused the action (HTTP 403); check webserver.api.allow_destructive on the instance'
+
+    class BrokenClient(FakePiholeClient):
+        def run_action(self, action):
+            raise PiholeAPIError(detail, status_code=403)
+
+    monkeypatch.setattr(api, 'PiholeClient', BrokenClient)
+    with pytest.raises(HTTPException) as caught:
+        api.instance_action('pihole1', 'restart_dns')
+    assert caught.value.status_code == 502
+    assert caught.value.detail == detail
+    assert audits == []
+
+
+def test_instance_action_unreachable_before_send_503_not_audited(monkeypatch):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, 'record', lambda *args: audits.append(args))
+
+    class BrokenClient(FakePiholeClient):
+        def __enter__(self):
+            raise httpx.ConnectError('Connection refused')
+
+    monkeypatch.setattr(api, 'PiholeClient', BrokenClient)
+    with pytest.raises(HTTPException) as caught:
+        api.instance_action('pihole1', 'restart_dns')
+    assert caught.value.status_code == 503
+    assert caught.value.detail == 'Unable to reach Pi-hole instance'
+    assert FakePiholeClient.actions == []
+    assert audits == []
+
+
+def test_instance_action_transport_error_after_send_audits_unconfirmed(monkeypatch):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+
+    class BrokenClient(FakePiholeClient):
+        def run_action(self, action):
+            self.actions.append(action)
+            raise httpx.ReadError("Connection reset")
+
+    monkeypatch.setattr(api, "PiholeClient", BrokenClient)
+    with pytest.raises(HTTPException) as caught:
+        api.instance_action("pihole1", "restart_dns")
+    assert caught.value.status_code == 503
+    assert caught.value.detail == "The action was sent but Pi-hole did not confirm it; it may have run. Check the instance."
+    assert FakePiholeClient.actions == ["restart_dns"]
+    assert audits == [("pihole1", "ftl_restart_dns", {}, {"status": "unconfirmed", "reason": "transport_error"})]
+
+
+@pytest.mark.parametrize(("status_code", "detail", "reason"), [
+    (500, "POST /api/action/flush/logs failed with HTTP 500", "http_500"),
+    (200, "Pi-hole action endpoint returned an invalid response", "invalid_response"),
+])
+def test_instance_action_upstream_error_after_send_audits_unconfirmed(monkeypatch, status_code, detail, reason):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+
+    class BrokenClient(FakePiholeClient):
+        def run_action(self, action):
+            self.actions.append(action)
+            raise pihole_client.PiholeActionUnconfirmedError(detail, status_code=status_code)
+
+    monkeypatch.setattr(api, "PiholeClient", BrokenClient)
+    with pytest.raises(HTTPException) as caught:
+        api.instance_action("pihole1", "flush_logs")
+    assert caught.value.status_code == 502
+    assert caught.value.detail == f"{detail}; the action may have partly run. Check the instance."
+    assert FakePiholeClient.actions == ["flush_logs"]
+    assert audits == [("pihole1", "ftl_flush_logs", {}, {"status": "unconfirmed", "reason": reason})]
+
+
+def test_instance_action_unconfirmed_survives_audit_failure(monkeypatch):
+    setup_api(monkeypatch)
+
+    def fail_record(*_args):
+        raise OSError("Audit unavailable")
+
+    class BrokenClient(FakePiholeClient):
+        def run_action(self, action):
+            self.actions.append(action)
+            raise pihole_client.PiholeActionUnconfirmedError(
+                "POST /api/action/flush/logs failed with HTTP 500", status_code=500,
+            )
+
+    monkeypatch.setattr(api, "record", fail_record)
+    monkeypatch.setattr(api, "PiholeClient", BrokenClient)
+    with pytest.raises(HTTPException) as caught:
+        api.instance_action("pihole1", "flush_logs")
+    assert caught.value.status_code == 502
+    assert caught.value.detail == (
+        "POST /api/action/flush/logs failed with HTTP 500; "
+        "the action may have partly run. Check the instance."
+    )
+    assert FakePiholeClient.actions == ["flush_logs"]
+
+
+def test_instance_action_survives_audit_failure(monkeypatch):
+    setup_api(monkeypatch)
+
+    def fail_record(*_args):
+        raise OSError('Audit unavailable')
+
+    monkeypatch.setattr(api, 'record', fail_record)
+    assert api.instance_action('pihole1', 'flush_network') == {'instance': 'pihole1', 'action': 'flush_network'}
+    assert FakePiholeClient.actions == ['flush_network']
+
+
+def test_instance_action_route_is_post_only_with_literal_action(monkeypatch):
+    import asyncio
+    from fastapi import FastAPI
+
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, 'record', lambda *args: audits.append(args))
+    routes = [route for route in api.router.routes if route.path == '/api/instances/{name}/actions/{action}']
+    assert len(routes) == 1
+    assert routes[0].methods == {'POST'}
+    test_app = FastAPI()
+    test_app.include_router(api.router)
+
+    async def requests():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url='http://test') as client:
+            response = await client.post('/api/instances/pihole1/actions/unknown')
+            assert response.status_code == 422
+
+    asyncio.run(requests())
+    assert FakePiholeClient.actions == []
+    assert audits == []

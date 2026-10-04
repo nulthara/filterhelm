@@ -31,7 +31,7 @@ from app.config import (
     instances_mutation,
     save_instances,
 )
-from app.pihole_client import DatabaseInfo, FtlInfo, PiholeAPIError, PiholeClient, SensorsInfo, SystemInfo
+from app.pihole_client import DatabaseInfo, FtlAction, FtlInfo, PiholeActionUnconfirmedError, PiholeAPIError, PiholeClient, SensorsInfo, SystemInfo
 from app.settings_fields import MANAGED_FIELDS, display_setting, get_setting, normalize_setting, set_setting
 from app.url_policy import (
     normalize_instance_url,
@@ -74,6 +74,11 @@ def _fanout(items: list[_Item], worker: Callable[[_Item], _Result]) -> list[_Res
         max_workers=min(_FANOUT_WORKERS, len(items) or 1)
     ) as executor:
         return list(executor.map(worker, items))
+
+
+class FtlActionResult(BaseModel):
+    instance: str
+    action: FtlAction
 
 
 class InstanceInput(BaseModel):
@@ -745,6 +750,33 @@ def instance_backup(name: str) -> Response:
         "Content-Disposition": f'attachment; filename="{filename}"',
         "Cache-Control": "no-store",
     })
+
+
+@router.post("/instances/{name}/actions/{action}", response_model=FtlActionResult)
+def instance_action(name: str, action: FtlAction) -> dict[str, str]:
+    instance = _instance(name)
+    try:
+        with _client(instance) as client:
+            try:
+                client.run_action(action)
+            except httpx.HTTPError as exc:
+                _audit_landed_write(name, f"ftl_{action}", {}, {"status": "unconfirmed", "reason": "transport_error"})
+                raise HTTPException(
+                    503,
+                    detail="The action was sent but Pi-hole did not confirm it; it may have run. Check the instance.",
+                ) from exc
+            except PiholeActionUnconfirmedError as exc:
+                reason = f"http_{exc.status_code}" if exc.status_code is not None and exc.status_code >= 500 else "invalid_response"
+                _audit_landed_write(name, f"ftl_{action}", {}, {"status": "unconfirmed", "reason": reason})
+                raise HTTPException(
+                    502, detail=f"{exc}; the action may have partly run. Check the instance."
+                ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _api_error(exc) from exc
+    _audit_landed_write(name, f"ftl_{action}", {}, {"status": "success"})
+    return {"instance": name, "action": action}
 
 
 def _blocking_state(instance: Instance) -> dict[str, Any]:

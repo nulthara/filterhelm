@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DownOutlined, DownloadOutlined, EditOutlined, PlusOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons'
 import {
-  Alert, App, Badge, Button, Descriptions, Empty, Flex, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography,
+  Alert, App, Badge, Button, Descriptions, Dropdown, Empty, Flex, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import type { DescriptionsProps, TableProps } from 'antd'
-import { api, type Download, type HealthStatus, type Instance, type InstanceHealth, type InstanceInput } from '../api'
+import { api, type Download, type FtlAction, type HealthStatus, type Instance, type InstanceHealth, type InstanceInput } from '../api'
 
 function saveDownload({ blob, filename }: Download): void {
   const url = URL.createObjectURL(blob)
@@ -14,6 +14,42 @@ function saveDownload({ blob, filename }: Download): void {
   anchor.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+
+const ftlActions: Record<FtlAction, {
+  label: string
+  title: (name: string) => string
+  content: (name: string) => string
+  okText: string
+  danger: boolean
+  done: (name: string) => string
+}> = {
+  restart_dns: {
+    label: 'Restart DNS',
+    title: (name) => `Restart DNS on ${name}?`,
+    content: (name) => `FTL restarts and ${name} stops answering DNS queries for a few seconds. Clients that use only this resolver will see failed lookups until it is back.`,
+    okText: 'Restart DNS',
+    danger: false,
+    done: (name) => `DNS restart requested on ${name}`,
+  },
+  flush_logs: {
+    label: 'Flush logs',
+    title: (name) => `Flush logs on ${name}?`,
+    content: (name) => `This empties pihole.log and deletes the last 24 hours of query history from ${name}'s memory and database. The Queries page and 24-hour counters for ${name} start again from zero. This cannot be undone.`,
+    okText: 'Flush logs',
+    danger: true,
+    done: (name) => `Logs flushed on ${name}`,
+  },
+  flush_network: {
+    label: 'Flush network table',
+    title: (name) => `Flush the network table on ${name}?`,
+    content: (name) => `This clears ${name}'s list of seen devices (MAC, IP, hostname). Pi-hole rebuilds it as devices make queries. Client and group assignments are kept. This cannot be undone.`,
+    okText: 'Flush network table',
+    danger: true,
+    done: (name) => `Network table flushed on ${name}`,
+  },
+}
+
+const ftlActionItems = Object.entries(ftlActions).map(([key, { label, danger }]) => ({ key, label, danger }))
 
 const statusColor = { success: 'success', warning: 'warning', error: 'error' } as const
 const compatibilityColor = { compatible: 'success', incompatible: 'error', untested: 'warning', unknown: 'default' } as const
@@ -93,7 +129,7 @@ function HealthDetails({ health }: HealthDetailsProps) {
 }
 
 export default function InstancesPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [instances, setInstances] = useState<Instance[]>([])
   const [expandOverrides, setExpandOverrides] = useState<Map<string, boolean>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -102,6 +138,7 @@ export default function InstancesPage() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState<string>()
   const [backingUp, setBackingUp] = useState<string>()
+  const [actionRunning, setActionRunning] = useState<string>()
   const [form] = Form.useForm<InstanceInput>()
 
   const load = useCallback(async () => {
@@ -201,6 +238,26 @@ export default function InstancesPage() {
     }
   }
 
+  const runAction = async (name: string, action: FtlAction) => {
+    const { title, content, okText, danger, done } = ftlActions[action]
+    const confirmed = await modal.confirm({
+      title: title(name),
+      content: content(name),
+      okText,
+      okButtonProps: danger ? { danger: true } : undefined,
+    })
+    if (!confirmed) return
+    setActionRunning(name)
+    try {
+      await api.runFtlAction(name, action)
+      message.success(done(name))
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Action failed')
+    } finally {
+      setActionRunning(undefined)
+    }
+  }
+
   const remove = async (name: string) => {
     try {
       await api.deleteInstance(name)
@@ -265,6 +322,15 @@ export default function InstancesPage() {
           <Tooltip title="Download a Teleporter archive of this Pi-hole's configuration. It may include password hashes, so store it privately.">
             <Button icon={<DownloadOutlined />} loading={backingUp === item.name} onClick={() => void backup(item.name)}>Backup</Button>
           </Tooltip>
+          <Dropdown
+            disabled={actionRunning !== undefined}
+            menu={{ items: ftlActionItems, onClick: ({ key }) => void runAction(item.name, key as FtlAction) }}
+          >
+            <Button icon={<ToolOutlined />} loading={actionRunning === item.name}
+              disabled={actionRunning !== undefined && actionRunning !== item.name}>
+              Service <DownOutlined />
+            </Button>
+          </Dropdown>
           <Button icon={<EditOutlined />} onClick={() => openEdit(item)}>Edit</Button>
           <Popconfirm
             title={`Remove ${item.name}?`}
