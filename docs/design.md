@@ -123,7 +123,9 @@ building carefully rather than reaching for another off-the-shelf syncer:
 - Each Instances row has a Service menu with Restart DNS, Flush logs, and Flush
   network table. After confirmation, each action calls one `POST /api/action/*`
   endpoint on that instance and is audited as `ftl_<action>`, with status
-  `unconfirmed` when the transport fails after the request was sent. A 403 means
+  `unconfirmed` when the transport fails after the request was sent, when Pi-hole
+  answers 5xx, or when a 200 reply is unreadable. A 5xx can mean a partial run,
+  for example a flush that cleared the log but not the database. A 403 means
   the instance has `webserver.api.allow_destructive` off. Flush logs deletes the
   last 24 hours of query history.
 - A dedicated status view shows the current blocking state and remaining

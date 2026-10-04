@@ -31,7 +31,7 @@ from app.config import (
     instances_mutation,
     save_instances,
 )
-from app.pihole_client import DatabaseInfo, FtlAction, FtlInfo, PiholeAPIError, PiholeClient, SensorsInfo, SystemInfo
+from app.pihole_client import DatabaseInfo, FtlAction, FtlInfo, PiholeActionUnconfirmedError, PiholeAPIError, PiholeClient, SensorsInfo, SystemInfo
 from app.settings_fields import MANAGED_FIELDS, display_setting, get_setting, normalize_setting, set_setting
 from app.url_policy import (
     normalize_instance_url,
@@ -760,10 +760,16 @@ def instance_action(name: str, action: FtlAction) -> dict[str, str]:
             try:
                 client.run_action(action)
             except httpx.HTTPError as exc:
-                _audit_landed_write(name, f"ftl_{action}", {}, {"status": "unconfirmed"})
+                _audit_landed_write(name, f"ftl_{action}", {}, {"status": "unconfirmed", "reason": "transport_error"})
                 raise HTTPException(
                     503,
                     detail="The action was sent but Pi-hole did not confirm it; it may have run. Check the instance.",
+                ) from exc
+            except PiholeActionUnconfirmedError as exc:
+                reason = f"http_{exc.status_code}" if exc.status_code is not None and exc.status_code >= 500 else "invalid_response"
+                _audit_landed_write(name, f"ftl_{action}", {}, {"status": "unconfirmed", "reason": reason})
+                raise HTTPException(
+                    502, detail=f"{exc}; the action may have partly run. Check the instance."
                 ) from exc
     except HTTPException:
         raise

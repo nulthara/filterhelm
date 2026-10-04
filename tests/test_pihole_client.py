@@ -923,28 +923,48 @@ def test_run_action_403_names_allow_destructive(monkeypatch):
         client._client.close()
 
 
-@pytest.mark.parametrize(('status_code', 'body'), [
-    (500, b'sensitive upstream details'),
-    (200, b'{"status":"error"}'),
-    (200, b'not JSON'),
-    (200, b'[]'),
+@pytest.mark.parametrize(("status_code", "body"), [
+    (500, b"sensitive upstream details"),
+    (200, b"{\"status\":\"error\"}"),
+    (200, b"not JSON"),
+    (200, b"[]"),
 ])
 def test_run_action_rejects_bad_responses(monkeypatch, status_code, body):
-    monkeypatch.setattr(pihole_client, 'resolve_instance_destination', private_destination)
-    client = pihole_client.PiholeClient('https://pihole.lan', 'secret')
+    monkeypatch.setattr(pihole_client, "resolve_instance_destination", private_destination)
+    client = pihole_client.PiholeClient("https://pihole.lan", "secret")
     client._client.close()
     client._client = httpx.Client(
         transport=httpx.MockTransport(lambda _request: httpx.Response(status_code, content=body)),
-        base_url='https://pihole.lan',
+        base_url="https://pihole.lan",
     )
-    client._session = Session('session', 'csrf')
+    client._session = Session("session", "csrf")
+    try:
+        with pytest.raises(pihole_client.PiholeActionUnconfirmedError) as caught:
+            client.run_action("flush_logs")
+        assert caught.value.status_code == status_code
+        if status_code == 500:
+            assert str(caught.value) == "POST /api/action/flush/logs failed with HTTP 500"
+        else:
+            assert str(caught.value) == "Pi-hole action endpoint returned an invalid response"
+    finally:
+        client._client.close()
+
+
+@pytest.mark.parametrize("status_code", [401, 403, 404])
+def test_run_action_4xx_is_a_definite_refusal(monkeypatch, status_code):
+    monkeypatch.setattr(pihole_client, "resolve_instance_destination", private_destination)
+    client = pihole_client.PiholeClient("https://pihole.lan", "secret")
+    client._client.close()
+    client._client = httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(status_code, text="sensitive upstream details")),
+        base_url="https://pihole.lan",
+    )
+    client._session = Session("session", "csrf")
     try:
         with pytest.raises(pihole_client.PiholeAPIError) as caught:
-            client.run_action('flush_logs')
-        if status_code == 500:
-            assert caught.value.status_code == 500
-            assert str(caught.value) == 'POST /api/action/flush/logs failed with HTTP 500'
-        else:
-            assert str(caught.value) == 'Pi-hole action endpoint returned an invalid response'
+            client.run_action("flush_logs")
+        assert not isinstance(caught.value, pihole_client.PiholeActionUnconfirmedError)
+        assert caught.value.status_code == status_code
+        assert "sensitive upstream details" not in str(caught.value)
     finally:
         client._client.close()

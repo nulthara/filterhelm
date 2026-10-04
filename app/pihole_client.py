@@ -115,6 +115,10 @@ class PiholeAPIError(RuntimeError):
         self.status_code = status_code
 
 
+class PiholeActionUnconfirmedError(PiholeAPIError):
+    """Pi-hole received the action but did not confirm success; it may have run."""
+
+
 def _check_teleporter_archive(data: bytes) -> None:
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
@@ -1010,6 +1014,10 @@ class PiholeClient:
                 "Pi-hole refused the action (HTTP 403); check webserver.api.allow_destructive on the instance",
                 status_code=403,
             )
+        if resp.status_code >= 500:
+            raise PiholeActionUnconfirmedError(
+                f"POST {path} failed with HTTP {resp.status_code}", status_code=resp.status_code
+            )
         if resp.status_code != 200:
             raise PiholeAPIError(
                 f"POST {path} failed with HTTP {resp.status_code}", status_code=resp.status_code
@@ -1017,9 +1025,13 @@ class PiholeClient:
         try:
             body = resp.json()
         except ValueError as exc:
-            raise PiholeAPIError("Pi-hole action endpoint returned an invalid response") from exc
+            raise PiholeActionUnconfirmedError(
+                "Pi-hole action endpoint returned an invalid response", status_code=200
+            ) from exc
         if not isinstance(body, dict) or body.get("status") != "success":
-            raise PiholeAPIError("Pi-hole action endpoint returned an invalid response")
+            raise PiholeActionUnconfirmedError(
+                "Pi-hole action endpoint returned an invalid response", status_code=200
+            )
 
     def patch_config(self, changes: dict[str, Any]) -> dict[str, Any]:
         """`changes` is a JSON merge patch — only the keys being changed,
