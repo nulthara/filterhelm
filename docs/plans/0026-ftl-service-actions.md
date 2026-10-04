@@ -1,6 +1,6 @@
 # 0026 — FTL service actions (restart DNS, flush logs, flush network table)
 
-Status: in-review           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: in-progress         <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0026-ftl-service-actions
 Author: Claude (architect)
 Date: 2026-10-03
