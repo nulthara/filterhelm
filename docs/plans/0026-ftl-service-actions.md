@@ -60,13 +60,24 @@ The design decisions:
    one extra round trip per click, and flush-network would need a new network-table read
    this app has no other use for. The modal copy states each consequence instead,
    including that two of the actions cannot be undone.
-4. **An ambiguous transport failure still gets audited.** If the action POST fails at
-   the transport level *after* authentication succeeded (connection reset, read timeout),
-   the action may have run. Restart is the likely case, because FTL exits right after
-   replying. The route records the audit entry with `{"status": "unconfirmed"}` and
-   returns 503 with a message saying the action may have run. Failures before the POST
-   (credential missing, auth failure, connect refused) are not audited because nothing
-   was sent.
+4. **Any outcome that may have changed the instance gets audited.** Three outcomes after
+   the POST leave the action possibly applied, and each is audited as
+   `{"status": "unconfirmed", "reason": ...}`:
+   - **Transport error** (connection reset, read timeout). Restart is the likely case,
+     because FTL exits right after replying. The route returns 503.
+   - **HTTP 5xx.** FTL can fail partway through. `flush_dnsmasq_log()` truncates
+     `pihole.log` and clears in-memory queries, then deletes from the database and
+     returns 500 if that delete fails. `flush_network_table()` runs two separate
+     `DELETE`s. The route returns 502.
+   - **HTTP 200 with an unreadable or non-success body.** The handler ran, so the action
+     most likely landed. The route returns 502.
+
+   Definite refusals are not audited. FTL checks `allow_destructive` before it acts, so a
+   403 means nothing ran. Any other 4xx (for example a 401 from an expired session) is
+   rejected before the handler. Failures before the POST (credential missing, auth
+   failure, connect refused) are not audited either, because nothing was sent.
+   *Revision 2:* the first version audited only transport errors. An adversarial review
+   showed that a partial `flush_logs` returning 500 erased data with no audit line.
 5. **Audit after a landed action never fails the request.** The route uses the existing
    `_audit_landed_write` helper, the same as the bulk routes. Backup's fail-closed
    pattern does not fit here. Backup can withhold the archive when the audit fails, but
@@ -80,7 +91,7 @@ The design decisions:
 
 ## Files
 
-- `app/pihole_client.py` — add `FtlAction` literal, `_FTL_ACTION_PATHS`, `PiholeClient.run_action()`.
+- `app/pihole_client.py` — add `FtlAction` literal, `_FTL_ACTION_PATHS`, `PiholeActionUnconfirmedError`, `PiholeClient.run_action()`.
 - `app/routes/api.py` — add `FtlActionResult` model and `instance_action` route.
 - `frontend/src/api.ts` — add `FtlAction`, `FtlActionResult`, `api.runFtlAction()`.
 - `frontend/src/pages/InstancesPage.tsx` — add "Service" dropdown, confirm modals, running state.
@@ -111,10 +122,18 @@ The design decisions:
      - `path = _FTL_ACTION_PATHS[action]`; `resp = self._client.post(path, headers=self._auth_headers())`.
        Send no body. Gravity already posts with no body, and FTL accepts it.
      - `403` → `PiholeAPIError("Pi-hole refused the action (HTTP 403); check webserver.api.allow_destructive on the instance", status_code=403)`.
-     - Any other non-200 → `PiholeAPIError(f"POST {path} failed with HTTP {resp.status_code}", status_code=resp.status_code)`.
+     - Any other 4xx → `PiholeAPIError(f"POST {path} failed with HTTP {resp.status_code}", status_code=resp.status_code)`.
+     - Any status `>= 500` → `PiholeActionUnconfirmedError(f"POST {path} failed with HTTP {resp.status_code}", status_code=resp.status_code)`.
+     - Any other non-200 status (1xx or 3xx) → plain `PiholeAPIError`, as for 4xx.
      - `200` whose body does not parse as JSON, is not a dict, or has
-       `status != "success"` → `PiholeAPIError("Pi-hole action endpoint returned an invalid response")`.
+       `status != "success"` → `PiholeActionUnconfirmedError("Pi-hole action endpoint returned an invalid response", status_code=200)`.
      - Let `httpx.HTTPError` propagate unchanged. The route distinguishes it.
+   - Add next to `PiholeAPIError`:
+     ```python
+     class PiholeActionUnconfirmedError(PiholeAPIError):
+         """Pi-hole received the action but did not confirm success; it may have run."""
+     ```
+     It subclasses `PiholeAPIError`, so callers that catch the base class keep working.
 
 2. **Route (`app/routes/api.py`).**
    - Import `FtlAction` from `app.pihole_client`.
@@ -135,10 +154,16 @@ The design decisions:
         An auth or connect failure in `__enter__` maps through `_api_error`. In both cases
         nothing is audited.
      3. Inside the `with`, call `client.run_action(action)` in its own `try`:
-        - `httpx.HTTPError` → call `_audit_landed_write(name, f"ftl_{action}", {}, {"status": "unconfirmed"})`,
+        - `httpx.HTTPError` → call `_audit_landed_write(name, f"ftl_{action}", {}, {"status": "unconfirmed", "reason": "transport_error"})`,
           then raise `HTTPException(503, detail="The action was sent but Pi-hole did not confirm it; it may have run. Check the instance.")`.
-        - `PiholeAPIError` propagates to the outer handler → `_api_error` → 502 with the
-          client's message. Nothing is audited.
+        - `PiholeActionUnconfirmedError` → call `_audit_landed_write(name, f"ftl_{action}", {}, {"status": "unconfirmed", "reason": reason})`.
+          `reason` is `f"http_{exc.status_code}"` for a 5xx and `"invalid_response"` for a
+          200. Then raise `HTTPException(502, detail=f"{exc}; the action may have partly run. Check the instance.")`.
+          Catch this before any `PiholeAPIError` handling, because it is a subclass.
+        - Plain `PiholeAPIError` propagates to the outer handler → `_api_error` → 502 with
+          the client's message. Nothing is audited.
+        - Audit `reason` values are fixed strings. Never put `str(exc)` from an httpx error
+          into the audit line.
      4. On success, after the `with` block exits (logout done or swallowed), call
         `_audit_landed_write(name, f"ftl_{action}", {}, {"status": "success"})` and return
         `{"instance": name, "action": action}`.
@@ -182,7 +207,9 @@ The design decisions:
      Instances row has a Service menu with Restart DNS, Flush logs, and Flush network
      table. Each action calls one `POST /api/action/*` endpoint on that instance after a
      confirm. Each is audited as `ftl_<action>`, and as `unconfirmed` when the transport
-     fails after the request was sent. A 403 means the instance has
+     fails after the request was sent, when Pi-hole answers 5xx, or when a 200 reply
+     is unreadable. A 5xx can mean a partial run, for example a flush that cleared the
+     log but not the database. A 403 means the instance has
      `webserver.api.allow_destructive` off. Flush logs deletes the last 24 h of query
      history.
    - `README.md`: in the sentence listing what the audit log records, add "FTL service
@@ -215,12 +242,15 @@ def instance_action(name: str, action: FtlAction): ...
 | unknown instance | 404 | `{"detail": "Instance not found"}` |
 | no credential | 409 | `{"detail": "No credential stored"}` |
 | Pi-hole 403 | 502 | `{"detail": "Pi-hole refused the action (HTTP 403); check webserver.api.allow_destructive on the instance"}` |
-| other Pi-hole error / bad body | 502 | `{"detail": "<PiholeAPIError message>"}` |
+| other Pi-hole 4xx | 502 | `{"detail": "POST /api/action/... failed with HTTP <code>"}` |
+| Pi-hole 5xx (audited `unconfirmed`, `reason: "http_<code>"`) | 502 | `{"detail": "POST /api/action/... failed with HTTP <code>; the action may have partly run. Check the instance."}` |
+| Pi-hole 200 with bad body (audited `unconfirmed`, `reason: "invalid_response"`) | 502 | `{"detail": "Pi-hole action endpoint returned an invalid response; the action may have partly run. Check the instance."}` |
 | unreachable before send | 503 | `{"detail": "Unable to reach Pi-hole instance"}` |
-| transport failure after send | 503 | `{"detail": "The action was sent but Pi-hole did not confirm it; it may have run. Check the instance."}` |
+| transport failure after send (audited `unconfirmed`, `reason: "transport_error"`) | 503 | `{"detail": "The action was sent but Pi-hole did not confirm it; it may have run. Check the instance."}` |
 
 Audit lines: `action` ∈ `ftl_restart_dns | ftl_flush_logs | ftl_flush_network`,
-`before: {}`, `after: {"status": "success"}` or `{"status": "unconfirmed"}`.
+`before: {}`, `after: {"status": "success"}` or
+`{"status": "unconfirmed", "reason": "transport_error" | "http_<code>" | "invalid_response"}`.
 
 Frontend (`frontend/src/api.ts`):
 
@@ -256,7 +286,9 @@ pattern from `test_adlist_requests_include_block_type_and_preserve_groups`):
 - `test_run_action_rejects_bad_responses` — parametrized over: a 500 reply (message
   `POST /api/action/flush/logs failed with HTTP 500`, `status_code == 500`), a 200 with
   `{"status":"error"}`, a 200 with a non-JSON body, and a 200 with a JSON list. Each
-  raises `PiholeAPIError`.
+  raises `PiholeActionUnconfirmedError`. The 200 cases carry `status_code == 200`.
+- `test_run_action_4xx_is_a_definite_refusal` — parametrized over 401, 403, and 404.
+  Each raises `PiholeAPIError` that is *not* a `PiholeActionUnconfirmedError`.
 
 `tests/test_api.py` (add `run_action` to `FakePiholeClient` that appends to a class-level
 `actions` list, reset in `setup_api`):
@@ -274,7 +306,16 @@ pattern from `test_adlist_requests_include_block_type_and_preserve_groups`):
   instance` with no audit.
 - `test_instance_action_transport_error_after_send_audits_unconfirmed` — `run_action`
   raises `httpx.ReadError`. The result is 503 with the "sent but … not confirmed" detail,
-  and audits equal `[("pihole1", "ftl_restart_dns", {}, {"status": "unconfirmed"})]`.
+  and audits equal `[("pihole1", "ftl_restart_dns", {}, {"status": "unconfirmed", "reason": "transport_error"})]`.
+- `test_instance_action_upstream_error_after_send_audits_unconfirmed` — parametrized over
+  `run_action` raising `PiholeActionUnconfirmedError("POST /api/action/flush/logs failed with HTTP 500", status_code=500)`
+  (reason `http_500`) and `PiholeActionUnconfirmedError("Pi-hole action endpoint returned an invalid response", status_code=200)`
+  (reason `invalid_response`). The action is `flush_logs`. The result is 502, the detail
+  is the message followed by `; the action may have partly run. Check the instance.`, and
+  audits equal `[("pihole1", "ftl_flush_logs", {}, {"status": "unconfirmed", "reason": <reason>})]`.
+- `test_instance_action_unconfirmed_survives_audit_failure` — `record` raises `OSError`
+  and `run_action` raises the 500 `PiholeActionUnconfirmedError`. The route still raises
+  the 502 with the "may have partly run" detail, not a 500.
 - `test_instance_action_survives_audit_failure` — `record` raises `OSError`. The route
   still returns the success body.
 - `test_instance_action_route_is_post_only_with_literal_action` — exactly one route at
@@ -314,7 +355,11 @@ pattern from `test_adlist_requests_include_block_type_and_preserve_groups`):
       toast in the UI.
 - [ ] Successful actions write `ftl_<action>` audit lines with `{"status": "success"}`,
       visible and filterable on the Audit log page.
-- [ ] A transport failure after send writes an `unconfirmed` audit line and returns 503.
+- [ ] A transport failure after send writes an `unconfirmed` audit line with
+      `reason: "transport_error"` and returns 503.
+- [ ] A Pi-hole 5xx or an unreadable 200 writes an `unconfirmed` audit line with
+      `reason: "http_<code>"` or `"invalid_response"` and returns 502 with the
+      "may have partly run" detail. A 4xx writes no audit line.
 - [ ] Each Instances row shows a Service dropdown. Every item opens a confirm modal with
       the copy from Step 4. The flush items and their OK buttons are styled as danger.
       Cancel sends no request.
