@@ -1,6 +1,6 @@
 # 0027 — Block-list matching: exact address first, refuse ambiguity
 
-Status: in-progress           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped           <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0027-adlist-exact-match
 Author: Claude (architect)
 Date: 2026-10-03
