@@ -1553,14 +1553,20 @@ def test_adlist_bulk_delete_uses_stored_address(bulk_client):
 def test_adlist_bulk_dedupes_canonical_aliases(bulk_client):
     result = _adlist_batch("disable", ["https://lists.example/block.txt", "https://lists.example/block.txt/", "https://LISTS.EXAMPLE/block.txt"])
     assert len(bulk_client.updates) == 1
-    assert result["results"] == [{"id": "https://lists.example/block.txt", "success": True, "changed": True, "error": None}]
+    assert result["results"] == [
+        {"id": "https://lists.example/block.txt", "success": True, "changed": True, "error": None},
+        {"id": "https://lists.example/block.txt/", "success": False, "changed": False, "error": "Same block list as https://lists.example/block.txt"},
+        {"id": "https://LISTS.EXAMPLE/block.txt", "success": False, "changed": False, "error": "Same block list as https://lists.example/block.txt"},
+    ]
 
 
 def test_adlist_bulk_delete_dedupes_canonical_aliases(bulk_client):
     result = _adlist_batch("delete", ["https://lists.example/block.txt", "https://lists.example/block.txt/"])
     assert bulk_client.deletes == ["https://lists.example/block.txt"]
-    assert len(result["results"]) == 1
-    assert result["results"][0]["success"] is True
+    assert result["results"] == [
+        {"id": "https://lists.example/block.txt", "success": True, "changed": True, "error": None},
+        {"id": "https://lists.example/block.txt/", "success": False, "changed": False, "error": "Same block list as https://lists.example/block.txt"},
+    ]
 
 
 @pytest.mark.parametrize("enabled", [True, False])
@@ -1605,12 +1611,12 @@ def test_adlist_bulk_is_sequential_single_instance(bulk_client):
     assert bulk_client.reads == ["adlists"]
 
 
-def test_adlist_bulk_uses_first_match_on_duplicate_keys(bulk_client):
+def test_adlist_bulk_prefers_exact_match_on_duplicate_keys(bulk_client):
     first = _bulk_adlist("https://lists.example/block.txt/", groups=(0, 3))
     second = _bulk_adlist("https://lists.example/block.txt", groups=(4,))
     bulk_client.adlists = [first, second]
     _adlist_batch("disable", [second.address])
-    assert bulk_client.updates == [(first, False, [0, 3])]
+    assert bulk_client.updates == [(second, False, [4])]
 
 
 def test_dns_bulk_delete_removes_each_record(bulk_client, monkeypatch):
@@ -2487,3 +2493,99 @@ def test_instance_action_route_is_post_only_with_literal_action(monkeypatch):
     asyncio.run(requests())
     assert FakePiholeClient.actions == []
     assert audits == []
+
+
+def test_adlist_key_keeps_userinfo_and_fragment():
+    assert api._adlist_key("https://alice:one@example.com/list") != api._adlist_key("https://bob:two@example.com/list")
+    assert api._adlist_key("https://example.com/l#a") != api._adlist_key("https://example.com/l#b")
+    assert api._adlist_key("HTTPS://user@Example.COM/l/") == api._adlist_key("https://user@example.com/l")
+
+
+def test_adlist_delete_targets_the_exact_credentialed_record(bulk_client, monkeypatch):
+    alice = _bulk_adlist("https://alice:one@example.com/list")
+    bob = _bulk_adlist("https://bob:two@example.com/list")
+    bulk_client.adlists = [alice, bob]
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    api.adlist_delete("pihole1", api.AdlistDeleteInput(address=bob.address))
+    assert bulk_client.deletes == [bob.address]
+    assert FakePiholeClient.adlists == [alice]
+    assert len(audits) == 1
+    assert audits[0][1] == "adlist_delete"
+    assert audits[0][2]["address"] == bob.address
+
+
+def test_adlist_delete_does_not_match_a_bare_address_to_a_credentialed_record(bulk_client, monkeypatch):
+    items = [_bulk_adlist("https://alice:one@example.com/list"), _bulk_adlist("https://bob:two@example.com/list")]
+    bulk_client.adlists = items
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    with pytest.raises(HTTPException) as exc:
+        api.adlist_delete("pihole1", api.AdlistDeleteInput(address="https://example.com/list"))
+    assert exc.value.status_code == 404
+    assert bulk_client.deletes == []
+    assert bulk_client.adlists == items
+    assert audits == []
+    assert "pihole1" not in api.load_pending_gravity()
+
+
+def test_adlist_delete_rejects_an_ambiguous_canonical_match(bulk_client, monkeypatch):
+    items = [_bulk_adlist("https://example.com/l"), _bulk_adlist("https://example.com/l/")]
+    bulk_client.adlists = items
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    for operation, payload in [
+        (api.adlist_delete, api.AdlistDeleteInput(address="HTTPS://EXAMPLE.COM/l")),
+        (api.adlist_update, api.AdlistUpdateInput(address="HTTPS://EXAMPLE.COM/l", enabled=False)),
+    ]:
+        with pytest.raises(HTTPException) as exc:
+            operation("pihole1", payload)
+        assert exc.value.status_code == 409
+        assert exc.value.detail == "Address matches more than one block list on this instance; use the exact stored address"
+    assert bulk_client.deletes == []
+    assert bulk_client.updates == []
+    assert bulk_client.adlists == items
+    assert audits == []
+    assert "pihole1" not in api.load_pending_gravity()
+
+
+def test_adlist_exact_match_beats_a_canonical_sibling(bulk_client):
+    items = [_bulk_adlist("https://example.com/l"), _bulk_adlist("https://example.com/l/")]
+    bulk_client.adlists = items
+    for item in items:
+        api.adlist_update("pihole1", api.AdlistUpdateInput(address=item.address, enabled=False))
+    assert bulk_client.updates == [(item, False, [0]) for item in items]
+
+
+def test_adlist_bulk_keeps_credentialed_records_distinct(bulk_client):
+    addresses = ["https://alice:one@example.com/list", "https://bob:two@example.com/list"]
+    bulk_client.adlists = [_bulk_adlist(address) for address in addresses]
+    result = _adlist_batch("delete", addresses)
+    assert bulk_client.deletes == addresses
+    assert FakePiholeClient.adlists == []
+    assert result["results"] == [
+        {"id": address, "success": True, "changed": True, "error": None} for address in addresses
+    ]
+
+
+def test_adlist_bulk_reports_an_ambiguous_address(bulk_client, monkeypatch):
+    items = [_bulk_adlist("https://example.com/l"), _bulk_adlist("https://example.com/l/")]
+    bulk_client.adlists = items
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    result = _adlist_batch("disable", ["HTTPS://EXAMPLE.COM/l"])
+    assert result["results"] == [{
+        "id": "HTTPS://EXAMPLE.COM/l", "success": False, "changed": False,
+        "error": "Matches more than one block list on this instance; use the exact stored address",
+    }]
+    assert bulk_client.updates == []
+    assert bulk_client.adlists == items
+    assert audits == []
+    assert result["gravity_pending"] is False
+
+
+def test_adlist_bulk_collapses_literal_duplicates_silently(bulk_client):
+    address = "https://lists.example/block.txt"
+    result = _adlist_batch("delete", [address, address])
+    assert bulk_client.deletes == [address]
+    assert result["results"] == [{"id": address, "success": True, "changed": True, "error": None}]

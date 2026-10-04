@@ -5,6 +5,7 @@ re-reads current state rather than trusting the preview returned earlier.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 import concurrent.futures
 import hashlib
 from datetime import datetime, timezone
@@ -31,7 +32,7 @@ from app.config import (
     instances_mutation,
     save_instances,
 )
-from app.pihole_client import DatabaseInfo, FtlAction, FtlInfo, PiholeActionUnconfirmedError, PiholeAPIError, PiholeClient, SensorsInfo, SystemInfo
+from app.pihole_client import Adlist, DatabaseInfo, FtlAction, FtlInfo, PiholeActionUnconfirmedError, PiholeAPIError, PiholeClient, SensorsInfo, SystemInfo
 from app.settings_fields import MANAGED_FIELDS, display_setting, get_setting, normalize_setting, set_setting
 from app.url_policy import (
     normalize_instance_url,
@@ -147,12 +148,9 @@ class BlockingInput(BaseModel):
 
 
 def _adlist_key(url: str) -> str:
-    # issue #8: match on a canonical key so a Pi-hole-normalised URL still resolves.
-    # Plan 0012: addresses are no longer screened on the way in, so anything Pi-hole
-    # may hold has to be accepted here. urlsplit raises on an unmatched bracket, and a
-    # port that will not parse must not be dropped — mapping it to None would let
-    # "http://h:99999/l" collide with "http://h/l" and match the wrong record. Fall back
-    # to the raw string so a value we cannot canonicalize matches only itself.
+    # Normalize scheme/host case, port, and trailing slash while keeping raw userinfo,
+    # query, and fragment. _match_adlist uses this fallback only after exact matching.
+    # Unparseable addresses retain their raw string so they match only themselves.
     try:
         parsed = urlsplit(url)
         port = parsed.port
@@ -161,8 +159,11 @@ def _adlist_key(url: str) -> str:
     host = (parsed.hostname or "").lower()
     rendered_host = f"[{host}]" if ":" in host else host
     netloc = rendered_host if port is None else f"{rendered_host}:{port}"
+    userinfo, sep, _ = parsed.netloc.rpartition("@")
+    if sep:
+        netloc = f"{userinfo}@{netloc}"
     path = parsed.path.rstrip("/")
-    return parsed._replace(scheme=parsed.scheme.lower(), netloc=netloc, path=path, fragment="").geturl()
+    return parsed._replace(scheme=parsed.scheme.lower(), netloc=netloc, path=path).geturl()
 
 
 class BulkResult(BaseModel):
@@ -903,12 +904,30 @@ def adlist_add(payload: AdlistAddInput):
     return {"results": results}
 
 
-def _find_adlist(client: PiholeClient, address: str):
-    # issue #8: match on a canonical key so a Pi-hole-normalised URL still resolves
-    adlist = next(
-        (item for item in client.get_adlists() if _adlist_key(item.address) == _adlist_key(address)),
-        None,
-    )
+class AdlistAmbiguousError(Exception):
+    """A canonical address matches more than one stored block list."""
+
+
+def _match_adlist(items: Sequence[Adlist], address: str) -> Adlist | None:
+    for item in items:
+        if item.address == address:
+            return item
+    key = _adlist_key(address)
+    matches = [item for item in items if _adlist_key(item.address) == key]
+    if len(matches) >= 2:
+        raise AdlistAmbiguousError
+    return matches[0] if matches else None
+
+
+def _find_adlist(client: PiholeClient, address: str) -> Adlist:
+    # Exact match comes first; the canonical key is the fallback.
+    try:
+        adlist = _match_adlist(client.get_adlists(), address)
+    except AdlistAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Address matches more than one block list on this instance; use the exact stored address",
+        ) from exc
     if adlist is None:
         raise HTTPException(status_code=404, detail="Block list not found on this instance")
     return adlist
@@ -921,19 +940,25 @@ def adlist_bulk(instance_name: str, payload: AdlistBulkInput) -> dict[str, Any]:
     gravity_marked = False
     try:
         with _client(instance) as client:
-            current = {}
-            for item in client.get_adlists():
-                current.setdefault(_adlist_key(item.address), item)
-            requested: dict[str, str] = {}
-            for address in payload.addresses:
-                requested.setdefault(_adlist_key(address), address)
-            for key, address in requested.items():
+            current = client.get_adlists()
+            claimed: dict[str, str] = {}
+            for address in dict.fromkeys(payload.addresses):
                 result = {"id": address, "success": False, "changed": False, "error": None}
-                item = current.get(key)
+                try:
+                    item = _match_adlist(current, address)
+                except AdlistAmbiguousError:
+                    result["error"] = "Matches more than one block list on this instance; use the exact stored address"
+                    results.append(result)
+                    continue
                 if item is None:
                     result["error"] = "No longer present on this instance"
                     results.append(result)
                     continue
+                if item.address in claimed:
+                    result["error"] = f"Same block list as {claimed[item.address]}"
+                    results.append(result)
+                    continue
+                claimed[item.address] = address
                 target = payload.action == "enable"
                 try:
                     if payload.action == "delete":
