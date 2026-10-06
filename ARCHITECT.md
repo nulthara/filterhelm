@@ -125,6 +125,15 @@ Start a fresh thread (`--fresh`) only when the plan itself changed materially.
 
 Run against the diff on `feature/NNNN-slug` (`git diff main...HEAD`).
 
+After producing the final verdict, `/verify` posts the verdict, rubric summary,
+Definition-of-done output, and review notes as a review on the forge PR for the feature
+branch. Accept maps to `APPROVED`; Iterate and Escalate map to `REQUEST_CHANGES`. A `422`
+retries once as `COMMENT` with the same verdict body to accommodate self-review restrictions.
+The command reports the event posted and links to the PR. If no open PR matches, it offers
+to create one and does so only on agreement. Missing configuration or posting failures
+produce a notice while leaving the full terminal review intact. A review is a record
+rather than a merge gate; it does not enforce branch protection.
+
 ### Rubric
 
 1. **Scope** — every change traces to a plan step. Flag anything outside Scope, even if
@@ -232,3 +241,8 @@ When in doubt, write the plan. It's cheap.
   mark it `Status: shipped` on merge.
 - After merge, confirm the deploy came back up (the workflow curls
   `/api/auth/status` — watch the run).
+- `/verify` posting requires `PIHOLE_MANAGER_FORGE_API` (API base URL including scheme
+  and port, no trailing slash) and `PIHOLE_MANAGER_FORGE_TOKEN` (token with `repository`
+  write scope). Set both outside the repo: the hygiene guard forbids the forge's
+  identifying details in tracked files. Owner and repo are derived from the origin
+  git remote at runtime.

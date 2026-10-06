@@ -5,6 +5,13 @@ Branch: feature/0019-verify-posts-pr-review
 Author: Claude (Architect)
 Date: 2026-09-20
 
+Implementation handback: Codex implements on the existing feature branch at the user's
+explicit request, superseding the implementer deviation recorded below. Changes remain
+uncommitted and unstaged because Git is read-only in the implementing sandbox. The hygiene
+guard reads the working-tree contents of tracked paths, so it can check these edits without
+staging. Step 8 remains a user action outside the repo; live `/verify` API checks remain
+manual as specified in Tests.
+
 ## Problem
 
 The review phase produces a real artifact — a rubric pass, invariant walk, Definition-of-done
