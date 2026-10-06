@@ -1,6 +1,6 @@
 # 0019 — /verify posts its verdict to the pull request
 
-Status: in-progress           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped           <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0019-verify-posts-pr-review
 Author: Claude (Architect)
 Date: 2026-09-20
