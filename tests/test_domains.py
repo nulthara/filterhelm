@@ -411,7 +411,11 @@ def test_domain_bulk_dedupes_case_and_trailing_dot_aliases(domain_bulk_client):
     domain_bulk_client.items = {"pihole1": [make_domain("ads.example.com")]}
     result = _domain_batch("disable", [(name, "deny", "exact") for name in ["Ads.Example.COM", "ads.example.com.", "ads.example.com"]])
     assert len(domain_bulk_client.updated) == 1
-    assert result["results"] == [{"id": "deny:exact:Ads.Example.COM", "success": True, "changed": True, "error": None}]
+    assert result["results"] == [
+        {"id": "deny:exact:Ads.Example.COM", "success": True, "changed": True, "error": None},
+        {"id": "deny:exact:ads.example.com.", "success": False, "changed": False, "error": "Same domain as Ads.Example.COM"},
+        {"id": "deny:exact:ads.example.com", "success": False, "changed": False, "error": "Same domain as Ads.Example.COM"},
+    ]
 
 
 def test_domain_bulk_does_not_dedupe_across_type_or_kind(domain_bulk_client):
@@ -431,12 +435,12 @@ def test_domain_bulk_regex_patterns_are_not_normalized(domain_bulk_client):
     assert result["results"][2]["error"] == "No longer present on this instance"
 
 
-def test_domain_bulk_uses_first_match_on_duplicate_keys(domain_bulk_client):
+def test_domain_bulk_prefers_exact_match_on_duplicate_keys(domain_bulk_client):
     first = make_domain("ADS.example.", comment="first")
     second = make_domain("ads.example", comment="last")
     domain_bulk_client.items = {"pihole1": [first, second]}
     _domain_batch("disable", [(second.domain, second.type, second.kind)])
-    assert domain_bulk_client.updated == [("pihole1", first, False, [0])]
+    assert domain_bulk_client.updated == [("pihole1", second, False, [0])]
 
 
 def test_domain_bulk_reports_success_when_audit_fails(domain_bulk_client, monkeypatch, caplog):
@@ -454,3 +458,106 @@ def test_domain_bulk_reports_success_when_audit_fails(domain_bulk_client, monkey
     assert len(entries) == 1
     assert "domain_delete" in entries[0].getMessage()
     assert "pihole1" in entries[0].getMessage()
+
+
+def test_domain_delete_matches_regex_verbatim(monkeypatch):
+    setup_domains(monkeypatch)
+    first = make_domain("ads", kind="regex")
+    second = make_domain("ads.", kind="regex")
+    FakeDomainsPiholeClient.items = {"pihole1": [first, second]}
+
+    domains.domain_delete(
+        "pihole1", domains.DomainDeleteInput(domain="ads.", type="deny", kind="regex")
+    )
+
+    assert FakeDomainsPiholeClient.items["pihole1"] == [first]
+
+
+def test_domain_update_regex_has_no_case_fallback(monkeypatch):
+    setup_domains(monkeypatch)
+    stored = make_domain("Ads", kind="regex")
+    FakeDomainsPiholeClient.items = {"pihole1": [stored]}
+
+    with pytest.raises(HTTPException) as caught:
+        domains.domain_update(
+            "pihole1",
+            domains.DomainUpdateInput(domain="ads", type="deny", kind="regex", enabled=False),
+        )
+
+    assert caught.value.status_code == 404
+    assert FakeDomainsPiholeClient.updated == []
+    assert FakeDomainsPiholeClient.items["pihole1"] == [stored]
+
+
+def test_domain_exact_match_beats_a_case_sibling(monkeypatch):
+    setup_domains(monkeypatch)
+    items = [make_domain("Ads.example"), make_domain("ads.example")]
+    FakeDomainsPiholeClient.items = {"pihole1": items.copy()}
+
+    for item in items:
+        domains.domain_update(
+            "pihole1",
+            domains.DomainUpdateInput(domain=item.domain, type="deny", kind="exact", enabled=False),
+        )
+
+    assert FakeDomainsPiholeClient.updated == [("pihole1", item, False, [0]) for item in items]
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+def test_domain_rejects_an_ambiguous_exact_match(monkeypatch, operation):
+    setup_domains(monkeypatch)
+    items = [make_domain("Ads.example"), make_domain("ads.example.")]
+    FakeDomainsPiholeClient.items = {"pihole1": items.copy()}
+    audits = []
+    deletes = []
+    monkeypatch.setattr(domains, "record", lambda *args: audits.append(args))
+    monkeypatch.setattr(FakeDomainsPiholeClient, "delete_domain", lambda *args: deletes.append(args))
+
+    with pytest.raises(HTTPException) as caught:
+        if operation == "update":
+            domains.domain_update(
+                "pihole1",
+                domains.DomainUpdateInput(domain="ADS.EXAMPLE", type="deny", kind="exact", enabled=False),
+            )
+        else:
+            domains.domain_delete(
+                "pihole1",
+                domains.DomainDeleteInput(domain="ADS.EXAMPLE", type="deny", kind="exact"),
+            )
+
+    assert caught.value.status_code == 409
+    assert caught.value.detail == "Domain matches more than one record on this instance; use the exact stored value"
+    assert FakeDomainsPiholeClient.updated == []
+    assert deletes == []
+    assert FakeDomainsPiholeClient.items["pihole1"] == items
+    assert audits == []
+
+
+def test_domain_bulk_reports_an_ambiguous_exact_match(domain_bulk_client, monkeypatch):
+    items = [make_domain("Ads.example"), make_domain("ads.example.")]
+    domain_bulk_client.items = {"pihole1": items.copy()}
+    audits = []
+    monkeypatch.setattr(domains, "record", lambda *args: audits.append(args))
+
+    result = _domain_batch("disable", [("ADS.EXAMPLE", "deny", "exact")])
+
+    assert result["results"] == [{
+        "id": "deny:exact:ADS.EXAMPLE", "success": False, "changed": False,
+        "error": "Matches more than one record on this instance; use the exact stored value",
+    }]
+    assert domain_bulk_client.updated == []
+    assert domain_bulk_client.deleted == []
+    assert domain_bulk_client.items["pihole1"] == items
+    assert audits == []
+
+
+def test_domain_bulk_collapses_literal_duplicates_silently(domain_bulk_client):
+    item = make_domain("ads.example")
+    domain_bulk_client.items = {"pihole1": [item]}
+
+    result = _domain_batch("disable", [("ads.example", "deny", "exact")] * 2)
+
+    assert domain_bulk_client.updated == [("pihole1", item, False, [0])]
+    assert result["results"] == [{
+        "id": "deny:exact:ads.example", "success": True, "changed": True, "error": None,
+    }]

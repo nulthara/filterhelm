@@ -5,6 +5,7 @@ import concurrent.futures
 import logging
 import os
 import re
+from collections.abc import Sequence
 from typing import Any, Callable, Literal, TypeVar
 
 from fastapi import APIRouter, HTTPException
@@ -111,8 +112,24 @@ class DomainBulkInput(BaseModel):
     domains: list[DomainRef] = Field(min_length=1, max_length=200)
 
 
-def _bulk_domain_key(type: str, kind: str, domain: str) -> tuple[str, str, str]:
-    return type, kind, domain.lower().rstrip(".") if kind == "exact" else domain
+class DomainAmbiguousError(Exception):
+    pass
+
+
+def _match_domain(items: Sequence[Domain], domain: str, type: str, kind: str) -> Domain | None:
+    candidates = [item for item in items if item.type == type and item.kind == kind]
+    for item in candidates:
+        if item.domain == domain:
+            return item
+    if kind != "exact":
+        return None
+    matches = [
+        item for item in candidates
+        if item.domain.lower().rstrip(".") == domain.lower().rstrip(".")
+    ]
+    if len(matches) >= 2:
+        raise DomainAmbiguousError
+    return matches[0] if matches else None
 
 
 class DomainAddInput(BaseModel):
@@ -172,16 +189,13 @@ def _domain_data(item: Domain) -> dict[str, Any]:
 
 
 def _find_domain(client: PiholeClient, domain: str, type: str, kind: str) -> Domain:
-    item = next(
-        (
-            item
-            for item in client.get_domains()
-            if item.type == type
-            and item.kind == kind
-            and item.domain.lower().rstrip(".") == domain.lower().rstrip(".")
-        ),
-        None,
-    )
+    try:
+        item = _match_domain(client.get_domains(), domain, type, kind)
+    except DomainAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Domain matches more than one record on this instance; use the exact stored value",
+        ) from exc
     if item is None:
         raise HTTPException(status_code=404, detail="Domain not found on this instance")
     return item
@@ -272,19 +286,28 @@ def domain_bulk(instance_name: str, payload: DomainBulkInput) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     try:
         with _client(instance) as client:
-            current = {}
-            for item in client.get_domains():
-                current.setdefault(_bulk_domain_key(item.type, item.kind, item.domain), item)
-            requested: dict[tuple[str, str, str], DomainRef] = {}
-            for ref in payload.domains:
-                requested.setdefault(_bulk_domain_key(ref.type, ref.kind, ref.domain), ref)
-            for key, ref in requested.items():
-                result = {"id": f"{ref.type}:{ref.kind}:{ref.domain}", "success": False, "changed": False, "error": None}
-                item = current.get(key)
+            current = client.get_domains()
+            claimed: dict[tuple[str, str, str], str] = {}
+            for type, kind, domain in dict.fromkeys(
+                (ref.type, ref.kind, ref.domain) for ref in payload.domains
+            ):
+                result = {"id": f"{type}:{kind}:{domain}", "success": False, "changed": False, "error": None}
+                try:
+                    item = _match_domain(current, domain, type, kind)
+                except DomainAmbiguousError:
+                    result["error"] = "Matches more than one record on this instance; use the exact stored value"
+                    results.append(result)
+                    continue
                 if item is None:
                     result["error"] = "No longer present on this instance"
                     results.append(result)
                     continue
+                key = (item.type, item.kind, item.domain)
+                if key in claimed:
+                    result["error"] = f"Same domain as {claimed[key]}"
+                    results.append(result)
+                    continue
+                claimed[key] = domain
                 target = payload.action == "enable"
                 try:
                     if payload.action == "delete":
@@ -358,9 +381,7 @@ def domain_delete(instance_name: str, payload: DomainDeleteInput):
     try:
         with _client(instance) as client:
             before = _find_domain(client, payload.domain, payload.type, payload.kind)
-            # match adlist_delete/_find_adlist: delete the matched record's own
-            # stored value, not the submitted one — _find_domain matches
-            # case-/trailing-dot-insensitively, so they can differ.
+            # Delete the matched record's stored value because the exact-kind fallback can match a different spelling.
             client.delete_domain(before.domain, before.type, before.kind)
         record(
             instance_name,
