@@ -1,6 +1,6 @@
 # 0029 — Frontend test runner and a shared bulk-action runner
 
-Status: in-progress         <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped             <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0029-frontend-vitest-bulk-runner
 Author: Claude (architect)
 Date: 2026-10-09
