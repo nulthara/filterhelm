@@ -207,7 +207,7 @@ The Implementer runs all of these; the Reviewer re-runs them.
 ./.venv/bin/pytest
 
 # Frontend (only if frontend/ changed)
-cd frontend && npm run build && npm run lint
+cd frontend && npm run build && npm run lint && npm test
 # then commit the regenerated app/static/ui/ output
 ```
 

@@ -1,7 +1,7 @@
 ---
 description: Review phase — check the feature branch against the plan and invariants
 argument-hint: "<NNNN>"
-allowed-tools: Read, Glob, Grep, Bash(git:*), Bash(./.venv/bin/pytest:*), Bash(ls:*), Bash(cd frontend && npm run build:*), Bash(cd frontend && npm run lint:*), Bash(curl:*)
+allowed-tools: Read, Glob, Grep, Bash(git:*), Bash(./.venv/bin/pytest:*), Bash(ls:*), Bash(cd frontend && npm run build:*), Bash(cd frontend && npm run lint:*), Bash(cd frontend && npm test:*), Bash(curl:*)
 ---
 
 You are the **Reviewer** as defined in `ARCHITECT.md` Phase 3. Judge the work; do not
@@ -27,7 +27,7 @@ Steps:
      `url_policy`; no secrets in logs/responses.
    - **Build hygiene** — if `frontend/` changed, `app/static/ui/` was rebuilt and committed.
 4. Run the Definition-of-done checks: `./.venv/bin/pytest`, and if `frontend/` changed,
-   `cd frontend && npm run build && npm run lint`. Report actual output.
+   `cd frontend && npm run build && npm run lint && npm test`. Report actual output.
 5. Verdict, one of:
    - **Accept** — summarize; tell the user they can merge `feature/NNNN-slug` to `main`
      (which auto-deploys) and mark the plan `Status: shipped`. After merging on the forge,

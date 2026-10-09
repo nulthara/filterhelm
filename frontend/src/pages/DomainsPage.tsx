@@ -3,7 +3,8 @@ import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Empty, Form, Input, List, Modal, Popconfirm, Radio, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import type { TableProps } from 'antd'
 import BulkActionBar from './BulkActionBar'
-import { api, type BulkAction, type BulkResult, type DomainRow, type GroupRow } from '../api'
+import { api, type BulkAction, type DomainRow, type GroupRow } from '../api'
+import { runBulkSequentially, summarizeBulk } from '../bulk'
 
 type DomainType = 'allow' | 'deny'
 type DomainKind = 'exact' | 'regex'
@@ -192,26 +193,13 @@ export default function DomainsPage() {
     if (!confirmed) return
     setWorking(true)
     try {
-      const results: Array<BulkResult & { instance: string }> = []
-      const instanceFailures: string[] = []
-      // Invariant #1: await one instance at a time; concurrent logins can race into a 401.
-      for (const target of targets) {
-        try {
-          const response = await api.bulkDomains(target.instance, action, target.domains)
-          results.push(...response.results.map((result) => ({ ...result, instance: target.instance })))
-        } catch (error) {
-          instanceFailures.push(`${target.instance}: ${error instanceof Error ? error.message : 'Unable to apply bulk action'}`)
-        }
-      }
-      const changed = results.filter((result) => result.changed).length
-      const unchanged = results.filter((result) => result.success && !result.changed).length
-      const failures = [
-        ...results.filter((result) => !result.success).map((result) => `${result.instance} / ${result.id}: ${result.error}`),
-        ...instanceFailures,
-      ]
-      const summary = `${selectedKeys.length} selected, ${changed} changed${unchanged ? `, ${unchanged} already in that state` : ''}`
-      if (failures.length) message.warning(`${summary}; failed: ${failures.join('; ')}`, 10)
-      else message.success(summary)
+      const run = await runBulkSequentially(
+        targets.map((target) => ({ instance: target.instance, items: target.domains })),
+        (instance, items) => api.bulkDomains(instance, action, items),
+      )
+      const outcome = summarizeBulk(selectedKeys.length, run)
+      if (outcome.failed) message.warning(outcome.text, 10)
+      else message.success(outcome.text)
       setSelectedKeys([])
       await load()
     } finally {

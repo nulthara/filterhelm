@@ -50,7 +50,7 @@ personal user-scope install. Nothing in this repo depends on one.
 
 ```bash
 ./.venv/bin/pytest                        # backend tests
-cd frontend && npm run build && npm run lint   # frontend; then commit app/static/ui/
+cd frontend && npm run build && npm run lint && npm test   # frontend; then commit app/static/ui/
 ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8420   # run locally
 ```
 
