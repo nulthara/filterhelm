@@ -15,6 +15,9 @@ invariants") it brushes up against, if any.
 
 **Shipped since these notes were first written** (moved out of the backlog):
 
+- Domain actions match the exact stored value first, never normalize regex patterns,
+  refuse an ambiguous exact-kind fallback, and report collapsed bulk aliases — plan 0028.
+
 - Block-list actions match exact stored addresses first, preserve userinfo and fragments
   in normalization fallback, refuse ambiguity, and report collapsed bulk aliases — plan 0027.
 
