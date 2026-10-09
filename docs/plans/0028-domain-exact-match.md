@@ -1,6 +1,6 @@
 # 0028 — Domain matching: exact value first, regex verbatim, refuse ambiguity
 
-Status: in-progress         <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped             <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0028-domain-exact-match
 Author: Claude (architect)
 Date: 2026-10-08
