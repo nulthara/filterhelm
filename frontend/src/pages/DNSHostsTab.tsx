@@ -3,7 +3,8 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutli
 import { Alert, App, Button, Empty, Form, Input, List, Modal, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd'
 import type { TableProps } from 'antd'
 import BulkActionBar from './BulkActionBar'
-import { api, type BulkAction, type BulkResult, type DNSRecord, type DNSRecordInput, type DNSRow } from '../api'
+import { api, type BulkAction, type DNSRecord, type DNSRecordInput, type DNSRow } from '../api'
+import { BULK_CHUNK_SIZE, runBulkSequentially, summarizeBulk } from '../bulk'
 
 type EditingRecord = DNSRecordInput
 
@@ -163,29 +164,14 @@ export default function DNSHostsTab() {
     if (!confirmed) return
     setWorking(true)
     try {
-      const results: Array<BulkResult & { instance: string }> = []
-      const instanceFailures: string[] = []
-      // Invariant #1: await one instance at a time; concurrent logins can race into a 401.
-      for (const target of targets) {
-        try {
-          for (let offset = 0; offset < target.records.length; offset += 200) {
-            const response = await api.bulkDNSRecords(target.instance, target.records.slice(offset, offset + 200))
-            results.push(...response.results.map((result) => ({ ...result, instance: target.instance })))
-          }
-        } catch (error) {
-          // Stop this instance's chunks after a throw; a rollback failure forbids more writes.
-          instanceFailures.push(`${target.instance}: ${error instanceof Error ? error.message : 'Unable to apply bulk action'}`)
-        }
-      }
-      const changed = results.filter((result) => result.changed).length
-      const unchanged = results.filter((result) => result.success && !result.changed).length
-      const failures = [
-        ...results.filter((result) => !result.success).map((result) => `${result.instance} / ${result.id}: ${result.error}`),
-        ...instanceFailures,
-      ]
-      const summary = `${selectedKeys.length} selected, ${changed} changed${unchanged ? `, ${unchanged} already in that state` : ''}`
-      if (failures.length) message.warning(`${summary}; failed: ${failures.join('; ')}`, 10)
-      else message.success(summary)
+      const run = await runBulkSequentially(
+        targets.map((target) => ({ instance: target.instance, items: target.records })),
+        (instance, items) => api.bulkDNSRecords(instance, items),
+        BULK_CHUNK_SIZE,
+      )
+      const outcome = summarizeBulk(selectedKeys.length, run)
+      if (outcome.failed) message.warning(outcome.text, 10)
+      else message.success(outcome.text)
       setSelectedKeys([])
       await load()
     } finally {

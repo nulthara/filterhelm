@@ -3,7 +3,8 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutli
 import { Alert, App, Button, Empty, Form, Input, InputNumber, List, Modal, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd'
 import type { TableProps } from 'antd'
 import BulkActionBar from './BulkActionBar'
-import { api, type BulkResult, type CNAMERecord, type CNAMERecordInput, type CNAMERow } from '../api'
+import { api, type CNAMERecord, type CNAMERecordInput, type CNAMERow } from '../api'
+import { runBulkSequentially, summarizeBulk } from '../bulk'
 import { stateTag } from './DNSHostsTab'
 
 type EditingRecord = CNAMERecordInput
@@ -163,26 +164,13 @@ export default function DNSCnamesTab() {
     if (!confirmed) return
     setWorking(true)
     try {
-      const results: Array<BulkResult & { instance: string }> = []
-      const instanceFailures: string[] = []
-      // Invariant #1: await one instance at a time; concurrent logins can race into a 401.
-      for (const target of targets) {
-        try {
-          const response = await api.bulkDNSCnames(target.instance, target.records)
-          results.push(...response.results.map((r) => ({ ...r, instance: target.instance })))
-        } catch (error) {
-          instanceFailures.push(`${target.instance}: ${error instanceof Error ? error.message : 'Unable to apply bulk action'}`)
-        }
-      }
-      const changed = results.filter((r) => r.changed).length
-      const unchanged = results.filter((r) => r.success && !r.changed).length
-      const failures = [
-        ...results.filter((r) => !r.success).map((r) => `${r.instance} / ${r.id}: ${r.error}`),
-        ...instanceFailures,
-      ]
-      const summary = `${selectedKeys.length} selected, ${changed} changed${unchanged ? `, ${unchanged} already removed` : ''}`
-      if (failures.length) message.warning(`${summary}; failed: ${failures.join('; ')}`, 10)
-      else message.success(summary)
+      const run = await runBulkSequentially(
+        targets.map((target) => ({ instance: target.instance, items: target.records })),
+        (instance, items) => api.bulkDNSCnames(instance, items),
+      )
+      const outcome = summarizeBulk(selectedKeys.length, run, 'already removed')
+      if (outcome.failed) message.warning(outcome.text, 10)
+      else message.success(outcome.text)
       setSelectedKeys([])
       await load()
     } finally {

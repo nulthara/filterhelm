@@ -15,6 +15,9 @@ invariants") it brushes up against, if any.
 
 **Shipped since these notes were first written** (moved out of the backlog):
 
+- Vitest runs frontend unit tests via `npm test`, and the four bulk pages share a
+  tested runner in `src/bulk.ts` — plan 0029.
+
 - Domain actions match the exact stored value first, never normalize regex patterns,
   refuse an ambiguous exact-kind fallback, and report collapsed bulk aliases — plan 0028.
 
@@ -128,19 +131,6 @@ Nothing is outstanding in this section.
 - **DHCP config visibility** — Pi-hole can run DHCP, but OPNsense is the
   authoritative DHCP source here and Pi-hole's DHCP is unused (design.md
   §10 confirms zero overlap today). Low value unless that changes.
-- **A frontend test runner.** `frontend/` has no test tooling at all — no vitest,
-  no jest, no `npm test` script — so every page handler is covered only by manual
-  UI exercise. Plan 0010 made that gap concrete: its DNS chunking loop, the
-  sequential per-instance `for … await`, the per-instance `try/catch` that stops one
-  instance's remaining chunks without abandoning the rest, and the selection-clearing
-  rules are all pure logic with no automated coverage, and the chunking path is the
-  one part live verification did not reach either (it needs a selection expanding past
-  200 records). Codex exercised these with a throwaway Node harness during
-  implementation; that harness is not in the repo and nothing reproduces it. Vitest is
-  the natural fit next to Vite, and the handlers would need light extraction to be
-  callable outside React. Worth doing before the next plan that puts real branching
-  logic in a page component — not urgent on its own, since the backend holds the
-  mutation safety and is well covered (326 tests).
 
 ## 6. Bugs / papercuts noticed in use
 

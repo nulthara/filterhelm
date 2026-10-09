@@ -101,6 +101,7 @@ Vite proxies `/api` to FastAPI. Before committing frontend changes, run:
 cd frontend
 npm run lint
 npm run build
+npm test
 ```
 
 The build writes directly to `app/static/ui`; include those generated changes

@@ -50,7 +50,7 @@ Coding rules for anyone — Claude or Codex — writing code in this repo. The *
   for fetches, unsubscribe for subscriptions). Compute derived values during render, not
   in an effect. `useCallback`/`useMemo` only when profiling shows a need.
 - Prefer controlled inputs. Break complex JSX expressions into named variables.
-- After any `frontend/` change: `cd frontend && npm run build && npm run lint`, then
+- After any `frontend/` change: `cd frontend && npm run build && npm run lint && npm test`, then
   commit the regenerated `app/static/ui/`. The deploy target has no Node.js.
 
 ## Dependency updates

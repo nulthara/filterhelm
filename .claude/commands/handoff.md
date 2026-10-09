@@ -33,7 +33,7 @@ Steps:
    > inside the plan's Scope — do not refactor adjacent code or expand the change. If the
    > plan is wrong, incomplete, or forces a project-invariant violation, stop and explain
    > instead of guessing. When done: run every check in ARCHITECT.md "Definition of done"
-   > (`./.venv/bin/pytest`; if `frontend/` changed, `npm run build` + `npm run lint` and
+   > (`./.venv/bin/pytest`; if `frontend/` changed, `npm run build` + `npm run lint` + `npm test` and
    > commit the regenerated `app/static/ui/`), commit on the feature branch, and report
    > what you changed plus any deviations from the plan.
 
