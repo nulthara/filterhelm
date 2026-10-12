@@ -1,6 +1,6 @@
 # 0030 — Rebrand to FilterHelm
 
-Status: in-review              <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped                <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0030-rebrand-filterhelm
 Author: Claude (architect)
 Date: 2026-10-11
