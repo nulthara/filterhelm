@@ -64,7 +64,7 @@ def _audit_landed_write(instance: str, action: str, before: dict, after: dict) -
 router = APIRouter(prefix="/api")
 credentials = CredentialStore()
 SUPPORTED_FTL_MAJOR = 6
-_FANOUT_WORKERS = max(1, int(os.environ.get("PIHOLE_MANAGER_FANOUT_WORKERS", "8")))
+_FANOUT_WORKERS = max(1, int(os.environ.get("FILTERHELM_FANOUT_WORKERS", "8")))
 _Item = TypeVar("_Item")
 _Result = TypeVar("_Result")
 
@@ -318,7 +318,7 @@ def _version_info(raw: dict[str, Any]) -> dict[str, Any]:
         compatibility_detail = "Supported FTL 6.x API"
     elif ftl_version[0] < SUPPORTED_FTL_MAJOR:
         compatibility = "incompatible"
-        compatibility_detail = "Pi-hole Manager requires the FTL 6.x API"
+        compatibility_detail = "FilterHelm requires the FTL 6.x API"
     else:
         compatibility = "untested"
         compatibility_detail = f"FTL {ftl_version[0]}.x is newer than the tested 6.x API"

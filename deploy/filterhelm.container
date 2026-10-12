@@ -1,18 +1,18 @@
 # Installed root-owned to /etc/containers/systemd/. See docs/deploy.md.
 [Unit]
-Description=Pi-hole Manager
+Description=FilterHelm
 Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=localhost/pihole-manager:latest
-ContainerName=pihole-manager
+Image=localhost/filterhelm:latest
+ContainerName=filterhelm
 Pull=never
 Network=host
-Volume=/var/lib/pihole-manager:/data
-EnvironmentFile=/etc/pihole-manager/env
+Volume=/var/lib/filterhelm:/data
+EnvironmentFile=/etc/filterhelm/env
 # Wins over EnvironmentFile; the volume is mounted only at /data.
-Environment=PIHOLE_MANAGER_DATA=/data
+Environment=FILTERHELM_DATA=/data
 ReadOnly=true
 NoNewPrivileges=true
 DropCapability=ALL

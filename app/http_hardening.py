@@ -33,16 +33,16 @@ class HardeningConfig:
         hosts = tuple(
             value.strip().lower()
             for value in os.environ.get(
-                "PIHOLE_MANAGER_TRUSTED_HOSTS", "localhost,127.0.0.1,testserver"
+                "FILTERHELM_TRUSTED_HOSTS", "localhost,127.0.0.1,testserver"
             ).split(",")
             if value.strip()
         )
         if not hosts:
-            raise RuntimeError("PIHOLE_MANAGER_TRUSTED_HOSTS must contain at least one host")
+            raise RuntimeError("FILTERHELM_TRUSTED_HOSTS must contain at least one host")
         return cls(
-            max_body_bytes=_positive_int("PIHOLE_MANAGER_MAX_BODY_BYTES", 1024 * 1024),
-            rate_limit_requests=_positive_int("PIHOLE_MANAGER_RATE_LIMIT_REQUESTS", 120),
-            rate_limit_window_seconds=_positive_int("PIHOLE_MANAGER_RATE_LIMIT_WINDOW_SECONDS", 60),
+            max_body_bytes=_positive_int("FILTERHELM_MAX_BODY_BYTES", 1024 * 1024),
+            rate_limit_requests=_positive_int("FILTERHELM_RATE_LIMIT_REQUESTS", 120),
+            rate_limit_window_seconds=_positive_int("FILTERHELM_RATE_LIMIT_WINDOW_SECONDS", 60),
             trusted_hosts=hosts,
         )
 

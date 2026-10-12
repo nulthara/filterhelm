@@ -40,8 +40,8 @@ Steps:
    `/codex:review` or `/codex:adversarial-review` pass before Accept, but keep the final
    verdict yours.
 
-Posting configuration (set outside the repo): `PIHOLE_MANAGER_FORGE_API` is the API base
-URL including scheme and port, with no trailing slash; `PIHOLE_MANAGER_FORGE_TOKEN` is
+Posting configuration (set outside the repo): `FILTERHELM_FORGE_API` is the API base
+URL including scheme and port, with no trailing slash; `FILTERHELM_FORGE_TOKEN` is
 the API token. Owner and repo come from `git remote get-url origin`. If either variable
 is unset or empty, skip posting with a one-line notice and still report the verdict and
 complete review in full. Never print the token, expand it into a literal in tool calls,
@@ -49,7 +49,7 @@ or write identifying forge details into tracked files.
 
 7. Post the final verdict and existing review summary to the forge PR. This is a review
    record, not a merge gate; do not change how the rubric or verdict is produced.
-   - Use `curl` with `Authorization: token {PIHOLE_MANAGER_FORGE_TOKEN}` (read the token
+   - Use `curl` with `Authorization: token {FILTERHELM_FORGE_TOKEN}` (read the token
      from the environment at execution time). Capture the HTTP status and response body
      separately; do not use verbose/trace output or expose request headers. For JSON
      POSTs, use `Content-Type: application/json` and correctly JSON-escape body text.

@@ -14,7 +14,7 @@ from app.pihole_client import Client, PiholeAPIError, PiholeClient
 
 router = APIRouter(prefix="/api")
 credentials = CredentialStore()
-_FANOUT_WORKERS = max(1, int(os.environ.get("PIHOLE_MANAGER_FANOUT_WORKERS", "8")))
+_FANOUT_WORKERS = max(1, int(os.environ.get("FILTERHELM_FANOUT_WORKERS", "8")))
 _Item = TypeVar("_Item")
 _Result = TypeVar("_Result")
 

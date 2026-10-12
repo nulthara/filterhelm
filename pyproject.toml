@@ -3,7 +3,7 @@ requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pihole-manager"
+name = "filterhelm"
 version = "0.1.0"
 description = "Local GUI for managing multiple Pi-hole instances"
 requires-python = ">=3.11"

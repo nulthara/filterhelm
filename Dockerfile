@@ -4,16 +4,16 @@ FROM docker.io/library/python:3.14-slim-trixie@sha256:51dafde81dbdb6ebde285137a2
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIHOLE_MANAGER_DATA=/data
+    FILTERHELM_DATA=/data
 
-WORKDIR /opt/pihole-manager
+WORKDIR /opt/filterhelm
 
 COPY requirements.lock ./
 RUN pip install --no-cache-dir --root-user-action=ignore --require-hashes --only-binary=:all: -r requirements.lock
 
-RUN groupadd --gid 10001 pihole-manager \
+RUN groupadd --gid 10001 filterhelm \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent \
-       --shell /usr/sbin/nologin pihole-manager \
+       --shell /usr/sbin/nologin filterhelm \
     && install -d -o 10001 -g 10001 -m 0700 /data
 
 # The frontend is the committed build; the image never runs Node.

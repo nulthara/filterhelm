@@ -2,7 +2,7 @@
 # Installed root-owned to /usr/local/sbin/. The runner may run it only through sudo.
 set -eu
 
-image=localhost/pihole-manager
+image=localhost/filterhelm
 
 healthy() {
     for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -13,19 +13,19 @@ healthy() {
 }
 
 # Unprivileged LXCs lack /dev/net/tun, so build steps use host networking.
-podman build --network=host --pull=missing --tag "$image:latest" /opt/pihole-manager
+podman build --network=host --pull=missing --tag "$image:latest" /opt/filterhelm
 
 # Promote to last-known-good only after the new container answers.
-if systemctl restart pihole-manager.service && healthy; then
+if systemctl restart filterhelm.service && healthy; then
     podman tag "$image:latest" "$image:good"
     podman image prune --force
     exit 0
 fi
 
-echo "pihole-manager failed its health probe" >&2
+echo "filterhelm failed its health probe" >&2
 if podman image exists "$image:good"; then
     echo "rolling back to $image:good" >&2
     podman tag "$image:good" "$image:latest"
-    systemctl restart pihole-manager.service
+    systemctl restart filterhelm.service
 fi
 exit 1

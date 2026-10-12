@@ -37,7 +37,7 @@ def _audit_landed_write(instance: str, action: str, before: dict, after: dict) -
 
 router = APIRouter(prefix="/api")
 credentials = CredentialStore()
-_FANOUT_WORKERS = max(1, int(os.environ.get("PIHOLE_MANAGER_FANOUT_WORKERS", "8")))
+_FANOUT_WORKERS = max(1, int(os.environ.get("FILTERHELM_FANOUT_WORKERS", "8")))
 _Item = TypeVar("_Item")
 _Result = TypeVar("_Result")
 

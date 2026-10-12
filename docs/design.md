@@ -1,4 +1,4 @@
-# Pi-hole Manager — design, requirements & layout
+# FilterHelm — design, requirements & layout
 
 **Moved here 2026-08-30** from a private infrastructure repo, where it was drafted — a
 standalone app is better off self-documenting in its own repo than relying
@@ -377,7 +377,7 @@ command). Flagging as a reversible decision, not a hard commitment.
 
 ### 7.3 Data & credential storage
 
-- Local config directory, e.g. `~/.config/pihole-manager/`:
+- Local config directory, e.g. `~/.config/filterhelm/`:
   - `instances.yml` — non-secret metadata: name, base URL, notes. Mirrors the
     shape of the internal notes' `hosts.ini`, deliberately, since both tools
     describe the same instances.
@@ -398,7 +398,7 @@ Left nav, single content pane — five screens plus an instance-add modal.
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│  Pi-hole Manager                                    [+ Add instance]│
+│  FilterHelm                                         [+ Add instance]│
 ├───────────┬───────────────────────────────────────────────────────┤
 │ Dashboard │  DASHBOARD                                             │
 │ DNS       │  ┌───────────────┐  ┌───────────────┐                  │
@@ -469,8 +469,7 @@ affected record and instance before firing.
 
 ## 9. Open questions
 
-- ~~**Where does the code live?**~~ — **decided: `~/git/pihole-manager`, its
-  own Gitea repo.** **Updated 2026-08-30: this design doc moved here too**
+- ~~**Where does the code live?**~~ — **decided: its own Gitea repo.** **Updated 2026-08-30: this design doc moved here too**
   (`docs/design.md`), rather than staying behind in a private infrastructure repo — a standalone app
   is better off self-documenting in its own repo than relying on a companion
   doc (and a chat transcript) living somewhere else. See §12.
@@ -533,18 +532,18 @@ setup details, still unexecuted as of this writing.
 
 Deployment shape: a non-root container managed by a rootful Podman Quadlet.
 The image uses the committed frontend bundle and hash-pinned Python dependencies.
-The Quadlet generates `pihole-manager.service`; see [deploy.md](deploy.md) for
+The Quadlet generates `filterhelm.service`; see [deploy.md](deploy.md) for
 bootstrap, cutover, and rollback instructions.
 
 ```ini
 [Container]
-Image=localhost/pihole-manager:latest
-ContainerName=pihole-manager
+Image=localhost/filterhelm:latest
+ContainerName=filterhelm
 Pull=never
 Network=host
-Volume=/var/lib/pihole-manager:/data
-EnvironmentFile=/etc/pihole-manager/env
-Environment=PIHOLE_MANAGER_DATA=/data
+Volume=/var/lib/filterhelm:/data
+EnvironmentFile=/etc/filterhelm/env
+Environment=FILTERHELM_DATA=/data
 ReadOnly=true
 NoNewPrivileges=true
 DropCapability=ALL
@@ -558,7 +557,7 @@ exposure and access control, while the app binds its host's interface.
 
 **Credential storage on this host:** `app/config.py`'s `CredentialStore`
 already handles this — it tries the OS keyring first and falls back to a
-`chmod 600` YAML file at `/var/lib/pihole-manager/secrets.yml` on the host
+`chmod 600` YAML file at `/var/lib/filterhelm/secrets.yml` on the host
 (`/data/secrets.yml` in the container) when no keyring backend exists, which is
 the expected case on a headless LXC. That fallback path, not the keyring path,
 is what actually runs once this is hosted rather than run from a developer's
@@ -622,7 +621,7 @@ quarter's.
   documented in the README. New block-list URLs receive syntax validation and
   canonicalization only: HTTP(S) is required, embedded credentials, control
   characters, fragments, and prohibited literal-IP hosts are rejected. They are
-  not resolved or subject to `PIHOLE_MANAGER_PUBLIC_ALLOWLIST`, because Pi-hole
+  not resolved or subject to `FILTERHELM_PUBLIC_ALLOWLIST`, because Pi-hole
   fetches them. Update, delete, and bulk inputs identify existing lists without
   URL screening.
 - **TODO — secrets:** document the `0600` YAML fallback as protected plaintext

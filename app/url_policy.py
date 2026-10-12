@@ -8,7 +8,7 @@ import os
 import socket
 from urllib.parse import urlsplit, urlunsplit
 
-PUBLIC_ALLOWLIST_ENV = "PIHOLE_MANAGER_PUBLIC_ALLOWLIST"
+PUBLIC_ALLOWLIST_ENV = "FILTERHELM_PUBLIC_ALLOWLIST"
 _PRIVATE_V4 = tuple(ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 _PRIVATE_V6 = (ipaddress.ip_network("fc00::/7"),)
 _METADATA_ADDRESSES = frozenset(

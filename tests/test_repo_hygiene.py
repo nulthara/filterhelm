@@ -112,7 +112,7 @@ def test_tracked_files_carry_no_known_private_tokens() -> None:
     path = ROOT / ".private-denylist.toml"
     if not path.exists():
         message = f"{path.name} is absent"
-        if os.environ.get("PIHOLE_MANAGER_REQUIRE_DENYLIST") == "1":
+        if os.environ.get("FILTERHELM_REQUIRE_DENYLIST") == "1":
             pytest.fail(message)
         pytest.skip(message)
     with path.open("rb") as source:

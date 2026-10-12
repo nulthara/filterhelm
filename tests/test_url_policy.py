@@ -110,7 +110,7 @@ def test_non_allowlisted_hostname_must_resolve_only_to_permitted_private_address
 
 
 def test_environment_allowlist_supports_hostname_ip_and_cidr(monkeypatch):
-    monkeypatch.setenv("PIHOLE_MANAGER_PUBLIC_ALLOWLIST", "pihole.example.com,8.8.8.8,1.1.1.0/24")
+    monkeypatch.setenv("FILTERHELM_PUBLIC_ALLOWLIST", "pihole.example.com,8.8.8.8,1.1.1.0/24")
     allowlist = PublicAllowlist.from_environment()
     assert allowlist.hostnames == {"pihole.example.com"}
     assert ipaddress.ip_address("8.8.8.8") in allowlist.addresses
@@ -118,9 +118,9 @@ def test_environment_allowlist_supports_hostname_ip_and_cidr(monkeypatch):
 
 
 def test_environment_allowlist_is_cached(monkeypatch):
-    monkeypatch.setenv("PIHOLE_MANAGER_PUBLIC_ALLOWLIST", "8.8.8.8")
+    monkeypatch.setenv("FILTERHELM_PUBLIC_ALLOWLIST", "8.8.8.8")
     first = get_public_allowlist()
-    monkeypatch.setenv("PIHOLE_MANAGER_PUBLIC_ALLOWLIST", "1.1.1.1")
+    monkeypatch.setenv("FILTERHELM_PUBLIC_ALLOWLIST", "1.1.1.1")
 
     assert get_public_allowlist() is first
     get_public_allowlist.cache_clear()
@@ -128,7 +128,7 @@ def test_environment_allowlist_is_cached(monkeypatch):
 
 
 def test_adlist_url_allows_a_public_list_without_an_allowlist(monkeypatch):
-    monkeypatch.delenv("PIHOLE_MANAGER_PUBLIC_ALLOWLIST", raising=False)
+    monkeypatch.delenv("FILTERHELM_PUBLIC_ALLOWLIST", raising=False)
     url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/tif.txt"
     assert screen_adlist_url(url) == url
 
