@@ -1,4 +1,13 @@
-# Pi-hole Manager
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/logos/filterhelm-horizontal-dark.svg" />
+  <img src="branding/logos/filterhelm-horizontal-light.svg" alt="FilterHelm" />
+</picture>
+
+# FilterHelm
+
+Multiple instances. One control plane.
+
+An independent, third-party management platform for Pi-hole instances. Not affiliated with or endorsed by Pi-hole.
 
 Local(ish) GUI for managing multiple Pi-hole instances — cross-instance DNS
 record comparison, adlist management, domain allow/deny overrides, group and client management, and per-instance settings.
@@ -39,7 +48,7 @@ Or with containers:
 
 ```bash
 docker compose up -d --build
-docker compose exec pihole-manager python -m app.auth set-password --username admin
+docker compose exec filterhelm python -m app.auth set-password --username admin
 ```
 
 You can also use `podman compose`. Then open `http://127.0.0.1:8420/`.
@@ -52,7 +61,7 @@ login, create or reset an administrator from the server console. In production,
 run it inside the container so its user and `/data` directory match the service:
 
 ```bash
-sudo podman exec -it pihole-manager python -m app.auth set-password --username admin
+sudo podman exec -it filterhelm python -m app.auth set-password --username admin
 ```
 
 Local passwords are Argon2id-hashed in the private `auth.db` data file.
@@ -62,7 +71,7 @@ The web UI detects an expired session on the next request and redirects to the s
 automatically. Any background status polling does not count as activity to prevent
 unattended tab from creating a zombie session. Since cookies are secure by
 default, production must use HTTPS. For loopback-only HTTP development, set
-`PIHOLE_MANAGER_COOKIE_SECURE=false`.
+`FILTERHELM_COOKIE_SECURE=false`.
 
 Five failed login attempts within 15 minutes will lock the account.
 The direct client address is recorded for audit but does not gate login attempts, 
@@ -73,18 +82,18 @@ login limits are recommended and stack with the application-wide request limit.
 To delegate authentication to a reverse proxy instead:
 
 ```ini
-PIHOLE_MANAGER_AUTH_MODE=proxy
-PIHOLE_MANAGER_PROXY_HEADER=Remote-User
-PIHOLE_MANAGER_PROXY_TRUSTED_IPS=127.0.0.1,192.0.2.10/32
-PIHOLE_MANAGER_PROXY_USERS=user,operator
+FILTERHELM_AUTH_MODE=proxy
+FILTERHELM_PROXY_HEADER=Remote-User
+FILTERHELM_PROXY_TRUSTED_IPS=127.0.0.1,192.0.2.10/32
+FILTERHELM_PROXY_USERS=user,operator
 ```
 --- below unsanitized ---
 
 The proxy must remove any client-supplied identity header and set its own only
 after successful authentication. Requests carrying identity are accepted only
-from `PIHOLE_MANAGER_PROXY_TRUSTED_IPS` (comma-separated IPs/CIDRs), and the
+from `FILTERHELM_PROXY_TRUSTED_IPS` (comma-separated IPs/CIDRs), and the
 proxy should still be the only host allowed to reach Uvicorn.
-`PIHOLE_MANAGER_PROXY_USERS` is optional; an empty value accepts any non-empty
+`FILTERHELM_PROXY_USERS` is optional; an empty value accepts any non-empty
 identity supplied by the trusted proxy. Local and proxy modes are mutually
 exclusive and never fall back to one another.
 
@@ -140,10 +149,10 @@ limited to 1 MiB whether or not the client supplies `Content-Length`.
 The defaults can be changed with positive integer values:
 
 ```ini
-PIHOLE_MANAGER_MAX_BODY_BYTES=1048576
-PIHOLE_MANAGER_RATE_LIMIT_REQUESTS=120
-PIHOLE_MANAGER_RATE_LIMIT_WINDOW_SECONDS=60
-PIHOLE_MANAGER_FANOUT_WORKERS=8
+FILTERHELM_MAX_BODY_BYTES=1048576
+FILTERHELM_RATE_LIMIT_REQUESTS=120
+FILTERHELM_RATE_LIMIT_WINDOW_SECONDS=60
+FILTERHELM_FANOUT_WORKERS=8
 ```
 
 The fan-out worker setting bounds the request-scoped thread pools used when the
@@ -156,11 +165,11 @@ their public hostname. Entries use Starlette's exact-host and leading
 `*.` wildcard syntax:
 
 ```ini
-PIHOLE_MANAGER_TRUSTED_HOSTS=manager.example,*.internal.example,127.0.0.1
+FILTERHELM_TRUSTED_HOSTS=manager.example,*.internal.example,127.0.0.1
 ```
 
 Do not use `*` in production. This list controls inbound `Host` headers and
-is separate from `PIHOLE_MANAGER_PUBLIC_ALLOWLIST`, which controls outbound
+is separate from `FILTERHELM_PUBLIC_ALLOWLIST`, which controls outbound
 Pi-hole destinations.
 
 Responses include a same-origin Content Security Policy, HSTS, clickjacking,
@@ -192,7 +201,7 @@ Public destinations require a comma-separated allowlist. Entries may be
 exact hostnames, exact IPv4/IPv6 addresses, or IPv4/IPv6 CIDRs:
 
 ```ini
-PIHOLE_MANAGER_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
+FILTERHELM_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
 ```
 
 Hostname entries match exactly; they do not implicitly allow subdomains.
@@ -203,12 +212,12 @@ closing the DNS-rebinding/time-of-check-to-time-of-use gap for Pi-hole API
 requests. New block-list URLs are validated for HTTP(S) syntax and canonicalized;
 embedded credentials, control characters, fragments, and literal-IP hosts in
 prohibited ranges are rejected. They are not resolved or subject to
-`PIHOLE_MANAGER_PUBLIC_ALLOWLIST`, because Pi-hole, not this app, fetches them.
+`FILTERHELM_PUBLIC_ALLOWLIST`, because Pi-hole, not this app, fetches them.
 Update, delete, and bulk inputs identify existing lists without URL screening.
 
 ### Pi-hole compatibility
 
-Pi-hole Manager supports the Pi-hole FTL 6.x REST API. The Instances page
+FilterHelm supports the Pi-hole FTL 6.x REST API. The Instances page
 reads `/api/info/version` and displays the detected Core, Web, FTL, and Docker
 versions. FTL 5.x is reported as incompatible; a future FTL major version is
 reported as untested until compatibility is confirmed. The Health column reads
@@ -264,3 +273,11 @@ mutated at a time rather than replacing the full list.
 - Git history still carries internal addresses and endpoints; see
   [docs/design.md §14](docs/design.md#14-public-release-readiness).
 - see [potential-features](docs/potential-features.md)
+
+## Upgrading from pihole-manager
+
+- Rename `PIHOLE_MANAGER_*` environment variables to `FILTERHELM_*`.
+- Local installs run `mv ~/.config/pihole-manager ~/.config/filterhelm`.
+- Keyring users re-enter instance app passwords.
+- Compose users get a new volume, so copy data from `pihole-manager-data` or start fresh.
+- Everyone signs in again.

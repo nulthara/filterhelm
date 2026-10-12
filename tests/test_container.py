@@ -10,28 +10,28 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def test_workflow_runs_redeploy_script_through_sudo() -> None:
     workflow = (ROOT / ".gitea/workflows/deploy.yml").read_text()
-    assert "run: sudo /usr/local/sbin/pihole-manager-redeploy" in workflow
+    assert "run: sudo /usr/local/sbin/filterhelm-redeploy" in workflow
     assert workflow.count("sudo ") == 1
 
 
 def test_sudoers_rule_matches_workflow() -> None:
     lines = (ROOT / "docs/deploy.md").read_text().splitlines()
-    rule = "gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/pihole-manager-redeploy"
+    rule = "gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/filterhelm-redeploy"
     assert lines.count(rule) == 1
 
 
 def test_redeploy_script_is_executable() -> None:
     result = subprocess.run(
-        ["git", "ls-files", "-s", "deploy/pihole-manager-redeploy"],
+        ["git", "ls-files", "-s", "deploy/filterhelm-redeploy"],
         cwd=ROOT, capture_output=True, text=True, check=True,
     )
     assert result.stdout.startswith("100755 ")
 
 
 def test_quadlet_never_pulls_or_auto_updates() -> None:
-    quadlet = (ROOT / "deploy/pihole-manager.container").read_text()
+    quadlet = (ROOT / "deploy/filterhelm.container").read_text()
     assert "Pull=never" in quadlet.splitlines()
-    assert "Image=localhost/pihole-manager:latest" in quadlet.splitlines()
+    assert "Image=localhost/filterhelm:latest" in quadlet.splitlines()
     assert "AutoUpdate=" not in quadlet
 
 
@@ -41,13 +41,13 @@ def test_container_runs_as_non_root() -> None:
         index for index, line in enumerate(dockerfile) if line.startswith("RUN ")
     )
     assert "read_only: true" in (ROOT / "compose.yaml").read_text()
-    assert "ReadOnly=true" in (ROOT / "deploy/pihole-manager.container").read_text().splitlines()
+    assert "ReadOnly=true" in (ROOT / "deploy/filterhelm.container").read_text().splitlines()
 
 
 def test_quadlet_pins_data_path() -> None:
-    lines = (ROOT / "deploy/pihole-manager.container").read_text().splitlines()
-    assert "Environment=PIHOLE_MANAGER_DATA=/data" in lines
-    assert "Volume=/var/lib/pihole-manager:/data" in lines
+    lines = (ROOT / "deploy/filterhelm.container").read_text().splitlines()
+    assert "Environment=FILTERHELM_DATA=/data" in lines
+    assert "Volume=/var/lib/filterhelm:/data" in lines
 
 
 def _run_redeploy(
@@ -91,7 +91,7 @@ fi
         "PROBE_RESULT": str(probe_result),
     }
     result = subprocess.run(
-        ["sh", str(ROOT / "deploy/pihole-manager-redeploy")],
+        ["sh", str(ROOT / "deploy/filterhelm-redeploy")],
         env=env, capture_output=True, text=True, check=False,
     )
     return result, log.read_text().splitlines()
@@ -101,10 +101,10 @@ def test_redeploy_promotes_after_healthy_probe(tmp_path: Path) -> None:
     result, log = _run_redeploy(tmp_path)
     assert result.returncode == 0
     assert log == [
-        "podman build --network=host --pull=missing --tag localhost/pihole-manager:latest /opt/pihole-manager",
-        "systemctl restart pihole-manager.service",
+        "podman build --network=host --pull=missing --tag localhost/filterhelm:latest /opt/filterhelm",
+        "systemctl restart filterhelm.service",
         "curl -fsS -o /dev/null http://127.0.0.1:8420/api/auth/status",
-        "podman tag localhost/pihole-manager:latest localhost/pihole-manager:good",
+        "podman tag localhost/filterhelm:latest localhost/filterhelm:good",
         "podman image prune --force",
     ]
 
@@ -112,37 +112,37 @@ def test_redeploy_promotes_after_healthy_probe(tmp_path: Path) -> None:
 def test_redeploy_rolls_back_when_probe_fails(tmp_path: Path) -> None:
     result, log = _run_redeploy(tmp_path, probe_result=1)
     assert result.returncode == 1
-    rollback = "podman tag localhost/pihole-manager:good localhost/pihole-manager:latest"
+    rollback = "podman tag localhost/filterhelm:good localhost/filterhelm:latest"
     assert rollback in log
-    assert log[log.index(rollback) + 1] == "systemctl restart pihole-manager.service"
-    assert log.count("systemctl restart pihole-manager.service") == 2
+    assert log[log.index(rollback) + 1] == "systemctl restart filterhelm.service"
+    assert log.count("systemctl restart filterhelm.service") == 2
     assert log.count("curl -fsS -o /dev/null http://127.0.0.1:8420/api/auth/status") == 10
     assert log.count("sleep 2") == 10
-    assert not any(":latest localhost/pihole-manager:good" in line for line in log)
+    assert not any(":latest localhost/filterhelm:good" in line for line in log)
     assert "podman image prune --force" not in log
 
 
 def test_redeploy_rolls_back_when_restart_fails(tmp_path: Path) -> None:
     result, log = _run_redeploy(tmp_path, restart_result=1)
     assert result.returncode == 1
-    rollback = "podman tag localhost/pihole-manager:good localhost/pihole-manager:latest"
+    rollback = "podman tag localhost/filterhelm:good localhost/filterhelm:latest"
     assert rollback in log
-    assert log[log.index(rollback) + 1] == "systemctl restart pihole-manager.service"
+    assert log[log.index(rollback) + 1] == "systemctl restart filterhelm.service"
     assert not any(line.startswith("curl ") for line in log)
-    assert not any(":latest localhost/pihole-manager:good" in line for line in log)
+    assert not any(":latest localhost/filterhelm:good" in line for line in log)
 
 
 def test_redeploy_without_good_image_fails_without_rollback(tmp_path: Path) -> None:
     result, log = _run_redeploy(tmp_path, image_exists_result=1, probe_result=1)
     assert result.returncode == 1
-    assert "podman image exists localhost/pihole-manager:good" in log
+    assert "podman image exists localhost/filterhelm:good" in log
     assert not any(line.startswith("podman tag ") for line in log)
-    assert log.count("systemctl restart pihole-manager.service") == 1
+    assert log.count("systemctl restart filterhelm.service") == 1
 
 
 def test_redeploy_stops_on_build_failure(tmp_path: Path) -> None:
     result, log = _run_redeploy(tmp_path, build_result=1)
     assert result.returncode != 0
     assert log == [
-        "podman build --network=host --pull=missing --tag localhost/pihole-manager:latest /opt/pihole-manager",
+        "podman build --network=host --pull=missing --tag localhost/filterhelm:latest /opt/filterhelm",
     ]

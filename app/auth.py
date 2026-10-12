@@ -20,8 +20,8 @@ from argon2.exceptions import VerifyMismatchError
 from app.config import DATA_DIR, _ensure_data_dir
 
 AUTH_DB = DATA_DIR / "auth.db"
-SESSION_COOKIE = "pihole_manager_session"
-POLL_HEADER = "x-pihole-manager-poll"
+SESSION_COOKIE = "filterhelm_session"
+POLL_HEADER = "x-filterhelm-poll"
 current_user: ContextVar[str | None] = ContextVar("current_user", default=None)
 
 
@@ -42,17 +42,17 @@ class AuthConfig:
 
     @classmethod
     def from_env(cls) -> "AuthConfig":
-        mode = os.environ.get("PIHOLE_MANAGER_AUTH_MODE", "local").strip().lower()
+        mode = os.environ.get("FILTERHELM_AUTH_MODE", "local").strip().lower()
         if mode not in {"local", "proxy"}:
-            raise RuntimeError("PIHOLE_MANAGER_AUTH_MODE must be 'local' or 'proxy'")
-        users = frozenset(filter(None, (item.strip() for item in os.environ.get("PIHOLE_MANAGER_PROXY_USERS", "").split(","))))
-        sources = tuple(filter(None, (item.strip() for item in os.environ.get("PIHOLE_MANAGER_PROXY_TRUSTED_IPS", "").split(","))))
+            raise RuntimeError("FILTERHELM_AUTH_MODE must be 'local' or 'proxy'")
+        users = frozenset(filter(None, (item.strip() for item in os.environ.get("FILTERHELM_PROXY_USERS", "").split(","))))
+        sources = tuple(filter(None, (item.strip() for item in os.environ.get("FILTERHELM_PROXY_TRUSTED_IPS", "").split(","))))
         return cls(
             mode=mode,
-            proxy_header=os.environ.get("PIHOLE_MANAGER_PROXY_HEADER", "Remote-User").strip(),
+            proxy_header=os.environ.get("FILTERHELM_PROXY_HEADER", "Remote-User").strip(),
             proxy_users=users,
             proxy_sources=sources,
-            cookie_secure=_env_bool("PIHOLE_MANAGER_COOKIE_SECURE", True),
+            cookie_secure=_env_bool("FILTERHELM_COOKIE_SECURE", True),
         )
 
 
@@ -215,7 +215,7 @@ def get_current_user() -> str | None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Manage Pi-hole Manager authentication")
+    parser = argparse.ArgumentParser(description="Manage FilterHelm authentication")
     parser.add_argument("command", choices=["set-password"])
     parser.add_argument("--username", default="admin")
     args = parser.parse_args()

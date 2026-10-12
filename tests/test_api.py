@@ -369,7 +369,7 @@ def test_adlist_match_ignores_a_normalized_trailing_slash(monkeypatch):
 
 
 def test_adlist_add_accepts_a_public_block_list(monkeypatch):
-    monkeypatch.delenv("PIHOLE_MANAGER_PUBLIC_ALLOWLIST", raising=False)
+    monkeypatch.delenv("FILTERHELM_PUBLIC_ALLOWLIST", raising=False)
     url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/tif.txt"
     assert api.AdlistAddInput(instances=["pihole1"], address=url).address == url
 

@@ -178,13 +178,13 @@ def test_authentication_middleware_matches_only_app_path_boundary(tmp_path):
 def test_authentication_middleware_poll_header_skips_last_seen_refresh(tmp_path, monkeypatch):
     manager = local_manager(tmp_path)
     token = manager.create_session("admin", now=100)
-    cookie = f"pihole_manager_session={token}"
+    cookie = f"filterhelm_session={token}"
     monkeypatch.setattr("app.auth.time.time", lambda: 105)
 
     assert middleware_status(
         manager,
         "/api/status",
-        [("cookie", cookie), ("x-pihole-manager-poll", "1")],
+        [("cookie", cookie), ("x-filterhelm-poll", "1")],
     ) == 204
     with manager.connect() as database:
         last_seen = database.execute(
@@ -216,14 +216,14 @@ def test_authentication_middleware_poll_header_does_not_resurrect_expired_sessio
         manager,
         "/api/status",
         [
-            ("cookie", f"pihole_manager_session={poll_token}"),
-            ("x-pihole-manager-poll", "1"),
+            ("cookie", f"filterhelm_session={poll_token}"),
+            ("x-filterhelm-poll", "1"),
         ],
     ) == 401
     assert middleware_status(
         manager,
         "/api/status",
-        [("cookie", f"pihole_manager_session={regular_token}")],
+        [("cookie", f"filterhelm_session={regular_token}")],
     ) == 401
 
 

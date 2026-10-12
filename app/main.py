@@ -24,7 +24,7 @@ from app.routes import api, audit_log, auth, clients, domains, drift, groups, lo
 from app.security import SameOriginMiddleware
 
 hardening = HardeningConfig.from_environment()
-app = FastAPI(title="Pi-hole Manager")
+app = FastAPI(title="FilterHelm")
 app.add_middleware(SameOriginMiddleware)
 app.add_middleware(
     RateLimitMiddleware,

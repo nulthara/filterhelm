@@ -613,7 +613,7 @@ export const api = {
   status: (options?: { background?: boolean }) =>
     request<{ instances: BlockingStatus[] }>(
       '/api/status',
-      options?.background ? { headers: { 'X-Pihole-Manager-Poll': '1' } } : undefined,
+      options?.background ? { headers: { 'X-FilterHelm-Poll': '1' } } : undefined,
     ),
   updateBlocking: (instances: string[], enabled: boolean, duration?: 10 | 30 | 300) =>
     request<{ results: BlockingResult[] }>('/api/blocking', {

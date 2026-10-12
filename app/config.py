@@ -20,7 +20,7 @@ import yaml
 
 from app.url_policy import normalize_instance_url, URLPolicyError
 
-DATA_DIR = Path(os.environ.get("PIHOLE_MANAGER_DATA", Path.home() / ".config" / "pihole-manager"))
+DATA_DIR = Path(os.environ.get("FILTERHELM_DATA", Path.home() / ".config" / "filterhelm"))
 INSTANCES_FILE = DATA_DIR / "instances.yml"
 SECRETS_FALLBACK_FILE = DATA_DIR / "secrets.yml"  # used only if no keyring backend is available
 PENDING_GRAVITY_FILE = DATA_DIR / "pending-gravity.yml"
@@ -145,7 +145,7 @@ class CredentialStore:
     See docs/design.md §7.3.
     """
 
-    SERVICE_NAME = "pihole-manager"
+    SERVICE_NAME = "filterhelm"
 
     def __init__(self) -> None:
         self._keyring = self._try_keyring()

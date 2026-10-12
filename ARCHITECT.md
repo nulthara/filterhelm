@@ -241,8 +241,8 @@ When in doubt, write the plan. It's cheap.
   mark it `Status: shipped` on merge.
 - After merge, confirm the deploy came back up (the workflow curls
   `/api/auth/status` — watch the run).
-- `/verify` posting requires `PIHOLE_MANAGER_FORGE_API` (API base URL including scheme
-  and port, no trailing slash) and `PIHOLE_MANAGER_FORGE_TOKEN` (token with `repository`
+- `/verify` posting requires `FILTERHELM_FORGE_API` (API base URL including scheme
+  and port, no trailing slash) and `FILTERHELM_FORGE_TOKEN` (token with `repository`
   write scope). Set both outside the repo: the hygiene guard forbids the forge's
   identifying details in tracked files. Owner and repo are derived from the origin
   git remote at runtime.

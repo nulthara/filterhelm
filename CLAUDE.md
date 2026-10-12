@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Pi-hole Manager — local GUI for managing multiple Pi-hole instances.
+FilterHelm — local GUI for managing multiple Pi-hole instances.
 FastAPI backend (owns credentials, Pi-hole API access, mutation safety, auditing) +
 React/TypeScript/Vite/Ant Design frontend that talks only to `/api`.
 

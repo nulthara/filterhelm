@@ -40,13 +40,13 @@ Needs `ENABLED = true`. If it's missing or false, add it and restart Gitea
 `systemctl status gitea` first; adjust if it's actually running in Docker).
 
 A quicker check that doesn't need a shell on the Gitea host at all: open the
-`pihole-manager` repo on Gitea's web UI and look for an **Actions** tab. If
+`filterhelm` repo on Gitea's web UI and look for an **Actions** tab. If
 it's not there, Actions is disabled server-wide and the config change above
 is the fix.
 
 ## 2. Register a runner scoped to this repo
 
-In the `pihole-manager` repo: **Settings → Actions → Runners → Create new
+In the `filterhelm` repo: **Settings → Actions → Runners → Create new
 Runner**. This gives a registration token and confirms the instance URL to
 register against (probably `http://git.example.com:3000` or the LXC's
 direct address — either works for registration, but prefer whichever this
@@ -106,14 +106,14 @@ sudo -u gitea-runner \
   /usr/local/bin/gitea-runner register \
   --no-interactive \
   --instance http://git.example.com:3000 \
-  --name pihole-manager-runner \
-  --labels pihole-manager-deploy:host
+  --name filterhelm-runner \
+  --labels filterhelm-deploy:host
 ```
 
 `:host` is the part that matters: it tells the runner to execute job steps
 directly on this OS, not inside a Docker container. Deliberate — the deploy host is
 an LXC, nested Docker-in-LXC is its own can of worms, and this deploy is
-just shell commands anyway. The label `pihole-manager-deploy` must match
+just shell commands anyway. The label `filterhelm-deploy` must match
 `runs-on:` in `.gitea/workflows/deploy.yml` exactly.
 
 Run it as a systemd service so it survives reboots:
@@ -121,7 +121,7 @@ Run it as a systemd service so it survives reboots:
 ```bash
 sudo tee /etc/systemd/system/gitea-runner.service >/dev/null <<'EOF'
 [Unit]
-Description=Gitea Actions runner (pihole-manager)
+Description=Gitea Actions runner (filterhelm)
 After=network.target
 
 [Service]
@@ -140,7 +140,7 @@ systemctl status gitea-runner.service --no-pager
 ```
 
 Confirm it shows up: repo **Settings → Actions → Runners** should list
-`pihole-manager-runner` as online/idle.
+`filterhelm-runner` as online/idle.
 
 ## 4. Prepare the host
 
@@ -169,11 +169,11 @@ sudo -u gitea-runner ssh-keygen \
   -t ed25519 \
   -f /home/gitea-runner/.ssh/id_ed25519 \
   -N '' \
-  -C pihole-manager-deploy
+  -C filterhelm-deploy
 sudo cat /home/gitea-runner/.ssh/id_ed25519.pub
 ```
 
-Add the printed public key in Gitea under **pihole-manager → Settings →
+Add the printed public key in Gitea under **filterhelm → Settings →
 Deploy Keys**, with write access disabled. Gitea's SSH service is on the
 non-standard port `2222`, so record that exact endpoint in `known_hosts`:
 
@@ -187,17 +187,17 @@ Then clone using `ssh://` syntax; the scp-style `git@host:path` form cannot
 express a custom SSH port:
 
 ```bash
-sudo mkdir -p /opt/pihole-manager
-sudo chown gitea-runner:gitea-runner /opt/pihole-manager
-sudo -u gitea-runner git clone ssh://git@git.example.com:2222/example/pihole-manager.git /opt/pihole-manager
+sudo mkdir -p /opt/filterhelm
+sudo chown gitea-runner:gitea-runner /opt/filterhelm
+sudo -u gitea-runner git clone ssh://git@git.example.com:2222/example/filterhelm.git /opt/filterhelm
 ```
 
 If the checkout already exists with the old HTTP origin, repair it in place:
 
 ```bash
-sudo -u gitea-runner git -C /opt/pihole-manager remote set-url \
-  origin ssh://git@git.example.com:2222/example/pihole-manager.git
-sudo -u gitea-runner git -C /opt/pihole-manager fetch origin main
+sudo -u gitea-runner git -C /opt/filterhelm remote set-url \
+  origin ssh://git@git.example.com:2222/example/filterhelm.git
+sudo -u gitea-runner git -C /opt/filterhelm fetch origin main
 ```
 
 The React/Ant Design production bundle is committed in `app/static/ui`.
@@ -209,27 +209,27 @@ development machine and the generated assets deploy with the repository.
 Install the environment file, data directory, Quadlet, and redeploy script by hand:
 
 ```bash
-sudo install -d -m 0700 /etc/pihole-manager
-sudo install -m 0600 /dev/null /etc/pihole-manager/env   # then edit; see below
-sudo install -d -o 10001 -g 10001 -m 0700 /var/lib/pihole-manager
-sudo install -o root -g root -m 0644 /opt/pihole-manager/deploy/pihole-manager.container /etc/containers/systemd/
-sudo install -o root -g root -m 0755 /opt/pihole-manager/deploy/pihole-manager-redeploy /usr/local/sbin/
+sudo install -d -m 0700 /etc/filterhelm
+sudo install -m 0600 /dev/null /etc/filterhelm/env   # then edit; see below
+sudo install -d -o 10001 -g 10001 -m 0700 /var/lib/filterhelm
+sudo install -o root -g root -m 0644 /opt/filterhelm/deploy/filterhelm.container /etc/containers/systemd/
+sudo install -o root -g root -m 0755 /opt/filterhelm/deploy/filterhelm-redeploy /usr/local/sbin/
 sudo systemctl daemon-reload
 ```
 
-Edit `/etc/pihole-manager/env` as root. Use `KEY=value` lines, without the
+Edit `/etc/filterhelm/env` as root. Use `KEY=value` lines, without the
 systemd unit's `Environment=` prefix:
 
 ```ini
-PIHOLE_MANAGER_AUTH_MODE=local
-PIHOLE_MANAGER_COOKIE_SECURE=true
+FILTERHELM_AUTH_MODE=local
+FILTERHELM_COOKIE_SECURE=true
 # Replace manager.example with the public hostname presented by the proxy.
-PIHOLE_MANAGER_TRUSTED_HOSTS=manager.example,127.0.0.1
+FILTERHELM_TRUSTED_HOSTS=manager.example,127.0.0.1
 # Optional: exact public hostname, IP, and CIDR entries (private LANs need no entry)
-# PIHOLE_MANAGER_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
+# FILTERHELM_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
 ```
 
-Do not set `PIHOLE_MANAGER_DATA` in the environment file: the Quadlet pins it
+Do not set `FILTERHELM_DATA` in the environment file: the Quadlet pins it
 to `/data`, taking precedence over the environment file.
 
 The environment file is root-owned, mode `0600`. The host data directory is
@@ -247,15 +247,15 @@ it with the empty template.
 The runner owns the checkout but receives only this passwordless sudo command:
 
 ```bash
-sudo visudo -f /etc/sudoers.d/gitea-runner-pihole-manager
+sudo visudo -f /etc/sudoers.d/gitea-runner-filterhelm
 ```
 
 ```text
-gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/pihole-manager-redeploy
+gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/filterhelm-redeploy
 ```
 
 The workflow calls the script without arguments. The script builds the image
-from `/opt/pihole-manager`, restarts `pihole-manager.service`, and probes
+from `/opt/filterhelm`, restarts `filterhelm.service`, and probes
 `/api/auth/status`. A passing probe promotes the image to `:good`; a failed
 restart or probe rolls back to `:good` when it exists and fails the deploy.
 A failed build exits before restart, leaving the running container alone. The
@@ -265,80 +265,117 @@ rewrite the installed root-owned script or Quadlet through a pushed repo edit.
 ## 7. First start
 
 ```bash
-sudo /usr/local/sbin/pihole-manager-redeploy
-sudo podman exec -it pihole-manager python -m app.auth set-password --username admin
+sudo /usr/local/sbin/filterhelm-redeploy
+sudo podman exec -it filterhelm python -m app.auth set-password --username admin
 curl -fsS http://127.0.0.1:8420/api/auth/status
 ```
 
 A Quadlet unit is not `systemctl enable`d. Its `[Install]` section is applied by
-the generator, producing `pihole-manager.service` for boot and normal service
+the generator, producing `filterhelm.service` for boot and normal service
 management. Podman auto-update is not enabled; deployments are initiated by
 pushes to `main`.
 
-## 8. Cutover from the systemd install
+## 8. Cutover from pihole-manager
 
-For a host already running the venv unit, perform this manual cutover before
-merging the container branch to `main`:
+Steps 0–7 run on the deploy host before merging `feature/0030-rebrand-filterhelm`,
+after the branch is pushed.
 
-0. Put the new files on the host first. With the feature branch pushed, run:
+0. **Rename the forge repo first, if renaming it.** Do this in the forge UI
+   before step 2, because step 2 fetches through the new remote URL.
+
+1. **Stop the service.**
 
    ```bash
-   sudo -u gitea-runner git -C /opt/pihole-manager fetch origin feature/0025-container-deploy
-   sudo -u gitea-runner git -C /opt/pihole-manager checkout --detach FETCH_HEAD
+   sudo systemctl stop pihole-manager.service
    ```
 
-   The next deploy run resets the checkout to `origin/main`.
-
-1. Find the current data directory. Read the unit's `PIHOLE_MANAGER_DATA` from:
+2. **Move the checkout and fetch the branch.**
 
    ```bash
-   systemctl show -p Environment pihole-manager.service
-   getent passwd pihole-manager
+   sudo mv /opt/pihole-manager /opt/filterhelm
    ```
 
-   If the unit does not set it, use `<home of pihole-manager>/.config/pihole-manager`.
-   Confirm it holds `auth.db`, `instances.yml`, and `secrets.yml`. Save the old
-   unit and sudoers rule for rollback.
-
-2. Complete §4–§6, copying the old unit's `Environment=` values into
-   `/etc/pihole-manager/env` as `KEY=value` lines, except `PIHOLE_MANAGER_DATA`.
-   Step 1 already used that value to find the data to copy.
-
-3. Stop and remove the old unit:
+   If the repo was renamed, run:
 
    ```bash
-   sudo systemctl disable --now pihole-manager.service
-   sudo rm /etc/systemd/system/pihole-manager.service
+   sudo -u gitea-runner git -C /opt/filterhelm remote set-url origin <new URL>
+   ```
+
+   Then fetch the branch and check it out:
+
+   ```bash
+   sudo -u gitea-runner git -C /opt/filterhelm fetch origin feature/0030-rebrand-filterhelm
+   sudo -u gitea-runner git -C /opt/filterhelm checkout --detach FETCH_HEAD
+   ```
+
+3. **Move config and rename env keys.**
+
+   ```bash
+   sudo mv /etc/pihole-manager /etc/filterhelm
+   sudo sed -i 's/^PIHOLE_MANAGER_/FILTERHELM_/' /etc/filterhelm/env
+   sudo cat /etc/filterhelm/env
+   sudo grep -n 'PIHOLE_MANAGER_' /etc/filterhelm/env
+   ```
+
+   Check the displayed file and confirm grep prints nothing (exit status 1).
+
+4. **Move data.**
+
+   ```bash
+   sudo mv /var/lib/pihole-manager /var/lib/filterhelm
+   ```
+
+   Ownership stays `10001:10001`.
+
+5. **Swap the units.**
+
+   ```bash
+   sudo rm /etc/containers/systemd/pihole-manager.container
+   sudo rm /usr/local/sbin/pihole-manager-redeploy
+   sudo rm /etc/sudoers.d/gitea-runner-pihole-manager
+   sudo install -o root -g root -m 0644 /opt/filterhelm/deploy/filterhelm.container /etc/containers/systemd/
+   sudo install -o root -g root -m 0755 /opt/filterhelm/deploy/filterhelm-redeploy /usr/local/sbin/
+   ```
+
+   Create the new sudoers file per §6, then reload:
+
+   ```bash
    sudo systemctl daemon-reload
    ```
 
-   A unit file in `/etc/systemd/system` overrides the Quadlet's generated unit
-   of the same name, so it must be removed before the first redeploy.
-
-4. Copy the data, leaving the old directory in place:
+6. **Start and verify.**
 
    ```bash
-   sudo cp -a <old data dir>/. /var/lib/pihole-manager/
-   sudo chown -R 10001:10001 /var/lib/pihole-manager
+   sudo /usr/local/sbin/filterhelm-redeploy
+   curl -fsS http://127.0.0.1:8420/api/auth/status
    ```
 
-5. Run §7's redeploy command and curl probe. Confirm the container data path
-   and migrated files:
+   This first run has no `:good` image, so a failure does not roll back.
+   Recover by fixing forward or by reversing steps 1–5.
+
+7. **Relabel the runner.** Change the runner's label to `filterhelm-deploy:host`.
+   Edit the `labels` array in `/home/gitea-runner/.runner`, or re-register per §3,
+   then restart:
 
    ```bash
-   sudo podman exec pihole-manager printenv PIHOLE_MANAGER_DATA
-   sudo podman exec pihole-manager ls -l /data
+   sudo systemctl restart gitea-runner.service
    ```
 
-   The first command must print `/data`, and the second must list the migrated
-   files. Then sign in with the existing account. Skip `set-password`.
+   Confirm the forge lists the new label.
 
-6. Merge to `main` only after the cutover succeeds. After the next push deploys
-   green, remove the old venv:
+8. **Merge.** The deploy run resets `/opt/filterhelm` to `origin/main`.
+   Watch it go green.
+
+9. **Clean up after a green deploy.**
 
    ```bash
-   sudo rm -rf /opt/pihole-manager/.venv
+   sudo podman image rm localhost/pihole-manager:latest localhost/pihole-manager:good
    ```
+
+   Optionally update the runner unit's `Description`.
+
+10. **Dev machine.** Rename `PIHOLE_MANAGER_FORGE_API`/`PIHOLE_MANAGER_FORGE_TOKEN`
+    to `FILTERHELM_FORGE_API`/`FILTERHELM_FORGE_TOKEN` in `~/.zshenv`.
 
 ## 9. Rollback
 
@@ -348,15 +385,15 @@ the deploy run fails. Failed deploys and retries never overwrite `:good`.
 To restore the last good image manually:
 
 ```bash
-sudo podman tag localhost/pihole-manager:good localhost/pihole-manager:latest
-sudo systemctl restart pihole-manager.service
+sudo podman tag localhost/filterhelm:good localhost/filterhelm:latest
+sudo systemctl restart filterhelm.service
 ```
 
 Only a passing probe promotes an image to `:good`. For an image that passes
 the probe but misbehaves, revert the commit on `main` and push.
 
 To abandon containers, stop the service, remove
-`/etc/containers/systemd/pihole-manager.container`, restore the saved old unit
+`/etc/containers/systemd/filterhelm.container`, restore the saved old unit
 and sudoers rule, and recreate the venv from the old runbook in git history.
 Reload systemd and enable/start the restored service. The old data directory
 is untouched by cutover; changes made after cutover are in the container's
@@ -365,10 +402,10 @@ host data directory.
 ## 10. First deploy
 
 Push any commit to `main` (or re-push the current HEAD) and watch the
-**Actions** tab on the `pihole-manager` repo. Expect three green steps: pull,
+**Actions** tab on the `filterhelm` repo. Expect three green steps: pull,
 build and restart, confirm-up. If "Confirm it came back up" fails, the
 service didn't come back within ~20s — check
-`journalctl -u pihole-manager -n 50 --no-pager` before assuming the workflow
+`journalctl -u filterhelm -n 50 --no-pager` before assuming the workflow
 itself is wrong.
 
 Once green, confirm from the LAN (not just `127.0.0.1` on the box itself):
