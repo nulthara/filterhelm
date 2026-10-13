@@ -1,6 +1,6 @@
 # 0031 — Retheme the UI to the FilterHelm brand
 
-Status: in-progress                    <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped                        <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0031-brand-retheme
 Author: Claude (architect)
 Date: 2026-10-13
