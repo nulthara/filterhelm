@@ -1,6 +1,6 @@
 # 0031 — Retheme the UI to the FilterHelm brand
 
-Status: in-progress                <!-- draft | approved | in-progress | in-review | shipped -->
+Status: in-progress                    <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0031-brand-retheme
 Author: Claude (architect)
 Date: 2026-10-13
@@ -46,10 +46,29 @@ in sync with the kit.
 **AA-safe primary in light mode.** Brand Blue `#1E88FF` gives white text 3.49:1, below WCAG
 AA's 4.5:1 for button labels. The kit says to verify contrast for real text pairs.
 - Light theme `colorPrimary` is `#0A6FE0`, a darker shade of brand Blue. White on it is 4.81:1.
-- Dark theme `colorPrimary` is brand Blue `#1E88FF`. On Navy it is 4.73:1 as link text.
-  Primary buttons get Navy text (`Button.primaryColor`), also 4.73:1.
+- Dark theme primary buttons get Navy text (`Button.primaryColor`).
 - A global `colorTextLightSolid: navy` was rejected. It also recolors danger buttons, badges,
   and solid tags, and Navy on AntD's dark red fails AA.
+
+**AA on derived tokens (Revision 1).** AntD derives the colors it renders from seeds.
+`darkAlgorithm` pulls every seed toward the background, so brand Blue `#1E88FF` renders as
+`#1d77dc`, which is 2.92:1 on a dark table row. AntD's default semantic colors fail too, and
+so does 45% tertiary text. A WCAG scan of the shipped branch flagged dark error red at 3.06:1,
+plus tertiary text at 3.56:1 and 4.01:1.
+- Each theme appends a pinning algorithm after its base algorithm:
+  `algorithm: [base, pinTokens(resolved)]`. The pin overwrites the derived map tokens in
+  `PINNED_TOKENS` with fixed hex values, so the rendered color is the value in the table.
+- Alias tokens (`colorTextPlaceholder`, `colorTextDescription`) are computed after the
+  algorithms run. They go in `token`, not the pin.
+- Light mode changes seeds where the default algorithm keeps them as given (`colorLink`,
+  `colorError`, `colorSuccess`, `colorWarning`). It pins hover and active shades that darken
+  instead of lighten, so white button text stays above 4.5:1 on hover.
+- Dark mode pins a lighter blue tint, `#62AFFF`, as the primary and link color. Brand Blue
+  itself fails as text on dark surfaces, even before derivation (4.0:1 on a dark container).
+  Brand Blue stays in the chrome as the selected-menu tint.
+- Disabled text keeps AntD's 25% alpha. WCAG 1.4.3 exempts inactive components.
+- The architect ran every pair in the Tests list against `theme.getDesignToken` with these
+  values, and all of them passed in both themes.
 
 **Navy chrome in both themes.** The header and sider stay Navy and keep `Menu theme="dark"`.
 The selected menu item gets a 24% brand-Blue tint, which keeps white text far above AA. In
@@ -73,6 +92,10 @@ the `test_repo_hygiene.py` host and IP checks, and they came back clean.
 - Google Fonts. The CSP blocks it, and it would make every page load call a third party.
 - A fallback font stack only. The user chose self-hosting.
 - Brand Blue as-is for the light primary. It fails AA for button text.
+- Lighter seeds through `darkAlgorithm` alone. A seed light enough to pass renders as a
+  washed-out steel blue (`#8CC4FF` becomes `#7aaadc`).
+- Per-component overrides (`components.Button.colorPrimary` and so on). Primary color feeds
+  dozens of components, and a missed one fails silently.
 - Following the OS only, or light only. The user chose OS plus a toggle.
 
 ## Files
@@ -223,6 +246,56 @@ Modified:
 12. **Build.** Run `npm run build && npm run lint && npm test`. Commit `app/static/ui/`,
     which now includes the seven `inter-*-wght-normal-*.woff2` files.
 
+13. **AA token pinning (Revision 1).** Steps 2–12 are already committed on the branch. This
+    step changes only `theme.ts` and `theme.test.ts`, then rebuilds.
+    - Add `import type { MappingAlgorithm } from 'antd/es/theme'`. It is type-only, and `tsc`
+      resolves it.
+    - Export `PINNED_TOKENS: Record<ResolvedTheme, Record<string, string>>` with these exact
+      values:
+
+      | Map token | Light | Dark |
+      | --- | --- | --- |
+      | `colorPrimary` | (unpinned) | `#62AFFF` |
+      | `colorPrimaryHover` | `#0A5FC2` | `#8CC4FF` |
+      | `colorPrimaryActive` | `#0051BA` | `#4DA3FF` |
+      | `colorPrimaryText` | (unpinned) | `#62AFFF` |
+      | `colorPrimaryTextHover` | `#0A5FC2` | `#8CC4FF` |
+      | `colorPrimaryTextActive` | (unpinned) | `#4DA3FF` |
+      | `colorLink` | (unpinned) | `#62AFFF` |
+      | `colorLinkHover` | `#0A5FC2` | `#8CC4FF` |
+      | `colorLinkActive` | `#0051BA` | `#4DA3FF` |
+      | `colorInfo` | `#0A5FC2` | `#62AFFF` |
+      | `colorInfoText` | `#0A5FC2` | `#62AFFF` |
+      | `colorError` | (unpinned) | `#FF8A87` |
+      | `colorErrorHover` | `#B71C1C` | `#FFA9A6` |
+      | `colorErrorActive` | (unpinned) | `#FF7875` |
+      | `colorErrorText` | (unpinned) | `#FF8A87` |
+      | `colorErrorTextHover` | `#B71C1C` | (unpinned) |
+      | `colorSuccess` | (unpinned) | `#73D13D` |
+      | `colorWarning` | (unpinned) | `#FFC53D` |
+      | `colorSuccessBg` | `#EDF7EE` | (unpinned) |
+      | `colorWarningBg` | `#FFF5E6` | (unpinned) |
+      | `colorErrorBg` | `#FDECEC` | (unpinned) |
+      | `colorInfoBg` | `#EAF3FF` | (unpinned) |
+      | `colorTextTertiary` | `rgba(11, 31, 59, 0.62)` | `rgba(230, 244, 255, 0.62)` |
+      | `green7` | `#2E7D32` | (unpinned) |
+      | `orange7` | `#A15C00` | (unpinned) |
+
+      "(unpinned)" means the key is absent from that theme's record.
+    - Add `pinTokens(resolved: ResolvedTheme): MappingAlgorithm`, which returns
+      `(_seed, map) => ({ ...map!, ...PINNED_TOKENS[resolved] })`. Add a comment that it must
+      run after the base algorithm.
+    - `themeConfig` changes:
+      - `algorithm` becomes `[base, pinTokens(resolved)]`, where `base` is the Step 3 algorithm.
+      - Light `token` adds `colorLink: LIGHT_PRIMARY`, `colorError: '#C62828'`,
+        `colorSuccess: '#2E7D32'`, and `colorWarning: '#A15C00'`.
+      - Both themes' `token` add `colorTextPlaceholder` and `colorTextDescription`, set to that
+        theme's `colorTextTertiary` value from the table.
+      - Dark `components.Button` becomes `{ primaryColor: brand.colors.navy, dangerColor: brand.colors.navy }`.
+      - The Step 3 rows for `colorPrimary`, `colorInfo`, `colorBgLayout`, and the rest are
+        unchanged.
+    - Rebuild and commit `app/static/ui/`.
+
 ## Contracts
 
 N/A — frontend-only. There are no API, config, or DB changes. The only new persisted value is
@@ -238,13 +311,31 @@ Any other value reads as `'system'`.
   - `writeThemeMode` calls `setItem(THEME_STORAGE_KEY, mode)`, and does not throw when
     `setItem` throws.
   - `resolveTheme` covers all six (mode, prefersDark) pairs.
-  - `themeConfig('light')` and `themeConfig('dark')` match the Step 3 table, key by key.
-  - A test-local WCAG `contrastRatio(hexA, hexB)` helper asserts these pairs are at least 4.5:
-    - white on `LIGHT_PRIMARY`
-    - Navy on brand Blue (dark primary button)
-    - brand Blue on Navy (dark links)
-    - Navy on `LIGHT_LAYOUT_BG`
-    - Ice on Navy
+  - `themeConfig('light')` and `themeConfig('dark')` match the Step 3 table plus the Step 13
+    `token` and `components.Button` changes, key by key. The `algorithm` array is
+    `[base, <function>]`.
+  - **Contrast on derived tokens (replaces the seed-pair test).** For each theme, compute
+    `t = theme.getDesignToken(themeConfig(resolved))`. The test-local helpers are:
+    - `contrastRatio(fg, bg)` parses `#rrggbb` and `rgb()`/`rgba()`.
+    - `flatten(fg, bg)` alpha-blends an `rgba` foreground over an opaque background before
+      measuring. The test blends the tag backgrounds onto `t.colorBgContainer` the same way.
+
+    Every pair below must be at least 4.5.
+    - Text over each of `t.colorBgContainer`, `t.colorBgLayout`, and `t.colorBgElevated`:
+      `colorText`, `colorTextSecondary`, `colorTextTertiary`, `colorTextDescription`,
+      `colorTextPlaceholder`, `colorPrimary`, `colorPrimaryHover`, `colorPrimaryText`,
+      `colorLink`, `colorLinkHover`, `colorInfo`, `colorInfoText`, `colorError`,
+      `colorErrorText`, `colorSuccess`, `colorWarning`.
+    - Status tags. `t.colorSuccess` over `colorSuccessBg`, and the same for Warning, Error,
+      and Info.
+    - Preset tags. `t.green7` over `green1`, and the same for `red`, `orange`, and `blue`.
+    - Primary button text over `colorPrimary`, `colorPrimaryHover`, and `colorPrimaryActive`.
+      The text is `components.Button.primaryColor`, or `#FFFFFF` when unset.
+    - Danger button text over `colorError`, `colorErrorHover`, and `colorErrorActive`. The
+      text is `components.Button.dangerColor`, or `#FFFFFF` when unset.
+    - The selected menu item. White over `rgba(30, 136, 255, 0.24)` flattened onto Navy.
+  - `colorTextDisabled` and `colorTextQuaternary` are not tested, because WCAG 1.4.3 exempts
+    inactive components.
 - `tests/test_branding.py::test_frontend_tokens_match_brand_kit` asserts that
   `frontend/src/assets/brand-tokens.json` and `.css` are byte-identical to their
   `branding/tokens/` sources.
@@ -287,7 +378,9 @@ Any other value reads as `'system'`.
   - Computed `font-family` on body text starts with `"Inter Variable"`, and DevTools shows the
     woff2 loading from `/app/assets/`.
 - [ ] Switching the OS to dark while the toggle is on System flips the app live. The content
-      turns Navy, text turns Ice, and primary buttons show Navy text on `#1E88FF`.
+      turns Navy, text turns Ice, and primary buttons show Navy text on `#62AFFF`.
+- [ ] A WCAG AA contrast scanner reports no failing text in either theme on Status, Drift,
+      Domains, and a confirm modal. Disabled controls are exempt.
 - [ ] Choosing Light or Dark in the toggle overrides the OS and survives a reload. Choosing
       System hands control back to the OS.
 - [ ] The toggle shows on the login screen and in the signed-in header, and both work.
@@ -295,3 +388,13 @@ Any other value reads as `'system'`.
       primary and error colors. Every status tag stays readable in both themes.
 - [ ] No console errors. With `localStorage` blocked (DevTools → Application → block site
       data), the app loads in System mode.
+
+## Revisions
+
+- **Revision 1 (2026-10-13).** A WCAG scan of the dark theme flagged error red at 3.06:1 and
+  tertiary text at 3.56:1 and 4.01:1. The original contrast test measured seed hex pairs,
+  but AntD renders derived tokens, and `darkAlgorithm` darkens every seed. Across both themes,
+  53 text pairs failed on derived tokens. Most were AntD defaults the plan never checked:
+  semantic colors, tertiary text, tag text, and hover states. Step 13 pins the failing map
+  tokens through an appended algorithm. The contrast test now measures
+  `theme.getDesignToken` output. The dark primary moves from brand Blue to `#62AFFF`.
