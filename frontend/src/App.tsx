@@ -15,6 +15,7 @@ import AuditPage from './pages/AuditPage'
 import DriftPage, { type DriftTarget } from './pages/DriftPage'
 import { api, type AuthStatus } from './api'
 import brandMark from './assets/filterhelm-icon-compact.svg'
+import ThemeToggle from './ThemeToggle'
 
 const { Header, Sider, Content } = Layout
 
@@ -68,7 +69,7 @@ export default function App() {
   if (!auth?.authenticated) {
     return (
       <Layout className="app-shell">
-        <Header className="app-header"><img className="brand-mark" src={brandMark} alt="" width={32} height={32} /><Typography.Title level={4} className="brand-title">FilterHelm</Typography.Title></Header>
+        <Header className="app-header"><img className="brand-mark" src={brandMark} alt="" width={32} height={32} /><Typography.Title level={4} className="brand-title">FilterHelm</Typography.Title><Space className="auth-actions"><ThemeToggle /></Space></Header>
         <Content className="auth-content">
           <Card title={auth?.mode === 'proxy' ? 'Authentication required' : 'Sign in'} className="auth-card">
             {authError ? <Alert type="error" showIcon message={authError} className="dns-error" /> : null}
@@ -95,6 +96,7 @@ export default function App() {
         <img className="brand-mark" src={brandMark} alt="" width={32} height={32} />
         <Typography.Title level={4} className="brand-title">FilterHelm</Typography.Title>
         <Space className="auth-actions">
+          <ThemeToggle />
           <Typography.Text className="auth-user">{auth.user}</Typography.Text>
           {auth.mode === 'local' ? (
             <Button className="logout-button" icon={<LogoutOutlined />} onClick={() => void logout()}>Sign out</Button>
@@ -106,7 +108,7 @@ export default function App() {
         </Space>
       </Header>
       <Layout>
-        <Sider breakpoint="lg" collapsedWidth="0" width={220}>
+        <Sider className="app-sider" breakpoint="lg" collapsedWidth="0" width={220}>
           <Menu
             theme="dark"
             mode="inline"

@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { ArrowRightOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, Col, Empty, Input, Row, Segmented, Space, Statistic, Table, Tag, Typography } from 'antd'
+import { Alert, App, Button, Card, Col, Empty, Input, Row, Segmented, Space, Statistic, Table, Tag, Typography, theme } from 'antd'
 import type { TableProps } from 'antd'
 import { api, type DriftCategory, type DriftItem, type DriftResponse, type DriftState } from '../api'
 import type { DNSTab } from './DNSPage'
@@ -26,6 +26,7 @@ const DESTINATIONS: Record<DriftCategory, { target: DriftTarget; label: string }
 
 export default function DriftPage({ onNavigate }: DriftPageProps) {
   const { message } = App.useApp()
+  const { token } = theme.useToken()
   const [data, setData] = useState<DriftResponse>()
   const [loading, setLoading] = useState(false)
   const [category, setCategory] = useState<DriftCategory | 'all'>('all')
@@ -110,7 +111,7 @@ export default function DriftPage({ onNavigate }: DriftPageProps) {
               role="button"
               tabIndex={0}
               aria-pressed={category === summary.category}
-              style={{ borderColor: category === summary.category ? '#1677ff' : undefined }}
+              style={{ borderColor: category === summary.category ? token.colorPrimary : undefined }}
               onClick={() => setCategory(category === summary.category ? 'all' : summary.category)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -119,7 +120,7 @@ export default function DriftPage({ onNavigate }: DriftPageProps) {
                 }
               }}
             >
-              <Statistic title={summary.label} value={summary.drifting} suffix={`/ ${summary.total}`} styles={{ content: { color: summary.drifting > 0 ? '#cf1322' : undefined } }} />
+              <Statistic title={summary.label} value={summary.drifting} suffix={`/ ${summary.total}`} styles={{ content: { color: summary.drifting > 0 ? token.colorError : undefined } }} />
             </Card>
           </Col>
         ))}
