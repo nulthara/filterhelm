@@ -46,3 +46,10 @@ def test_frontend_mark_matches_brand_kit() -> None:
     assert (ROOT / "frontend/public/favicon-32.png").read_bytes() == (
         ROOT / "branding/icons/filterhelm-32.png"
     ).read_bytes()
+
+
+def test_frontend_tokens_match_brand_kit() -> None:
+    for filename in ("brand-tokens.json", "brand-tokens.css"):
+        assert (ROOT / "frontend/src/assets" / filename).read_bytes() == (
+            ROOT / "branding/tokens" / filename
+        ).read_bytes()

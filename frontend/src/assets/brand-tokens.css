@@ -1,0 +1,13 @@
+/* FilterHelm brand tokens */
+:root {
+  --fh-navy: #0B1F3B;
+  --fh-blue: #1E88FF;
+  --fh-cyan: #00D6FF;
+  --fh-ice: #E6F4FF;
+  --fh-white: #FFFFFF;
+  --fh-font: Inter, system-ui, "Segoe UI", Arial, sans-serif;
+  --fh-radius-sm: 6px;
+  --fh-radius-md: 10px;
+  --fh-radius-lg: 16px;
+  --fh-space-unit: 4px;
+}

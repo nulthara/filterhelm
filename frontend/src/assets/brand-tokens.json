@@ -1,0 +1,24 @@
+{
+  "name": "FilterHelm",
+  "publisher": "Nulthara",
+  "tagline": "Multiple instances. One control plane.",
+  "colors": {
+    "navy": "#0B1F3B",
+    "blue": "#1E88FF",
+    "cyan": "#00D6FF",
+    "ice": "#E6F4FF",
+    "white": "#FFFFFF"
+  },
+  "typography": {
+    "preferred": "Inter",
+    "fallback": "system-ui, Segoe UI, Arial, sans-serif"
+  },
+  "radii": {
+    "sm": "6px",
+    "md": "10px",
+    "lg": "16px"
+  },
+  "spacing": {
+    "unit": "4px"
+  }
+}
