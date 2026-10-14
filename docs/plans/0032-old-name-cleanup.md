@@ -1,6 +1,6 @@
 # 0032 — Remove the old name from the docs
 
-Status: in-progress           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped              <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0032-old-name-cleanup
 Author: Claude (architect)
 Date: 2026-10-13
