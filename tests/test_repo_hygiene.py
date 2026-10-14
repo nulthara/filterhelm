@@ -108,7 +108,7 @@ def test_tracked_files_use_only_approved_addresses_and_hosts() -> None:
     assert not findings, "\n" + "\n".join(findings)
 
 
-def test_tracked_files_carry_no_known_private_tokens() -> None:
+def _denylist_patterns() -> dict[str, re.Pattern[str]]:
     path = ROOT / ".private-denylist.toml"
     if not path.exists():
         message = f"{path.name} is absent"
@@ -116,15 +116,53 @@ def test_tracked_files_carry_no_known_private_tokens() -> None:
             pytest.fail(message)
         pytest.skip(message)
     with path.open("rb") as source:
-        patterns = {
+        return {
             label: re.compile(pattern, re.IGNORECASE)
             for label, pattern in tomllib.load(source)["patterns"].items()
         }
+
+
+def test_tracked_files_carry_no_known_private_tokens() -> None:
+    patterns = _denylist_patterns()
     texts, findings = _tracked_texts()
     findings += [
         _finding(name, text, match, label)
         for name, text in texts
         for label, pattern in patterns.items()
         for match in pattern.finditer(text)
+    ]
+    assert not findings, "\n" + "\n".join(findings)
+
+
+def _commit_metadata() -> list[tuple[str, str]]:
+    result = subprocess.run(
+        ["git", "log", "HEAD", "-z", "--format=%h%n%an%n%ae%n%cn%n%ce%n%B"],
+        cwd=ROOT, check=True, capture_output=True,
+    )
+    records = result.stdout.decode("utf-8", errors="replace").split("\0")
+    return [
+        (sha, text)
+        for record in records if record
+        for sha, text in [record.split("\n", 1)]
+    ]
+
+
+def test_commit_history_carries_no_known_private_tokens() -> None:
+    patterns = _denylist_patterns()
+    findings = [
+        f"{sha}: {label}: {match.group(0)}"
+        for sha, text in _commit_metadata()
+        for label, pattern in patterns.items()
+        for match in pattern.finditer(text)
+    ]
+    assert not findings, "\n" + "\n".join(findings)
+
+
+def test_commit_history_has_no_forge_review_trailers() -> None:
+    findings = [
+        f"{sha}: {line}"
+        for sha, text in _commit_metadata()
+        for line in text.split("\n", 4)[4].splitlines()
+        if line.startswith("Reviewed-on:")
     ]
     assert not findings, "\n" + "\n".join(findings)

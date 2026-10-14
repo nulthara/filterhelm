@@ -235,8 +235,11 @@ When in doubt, write the plan. It's cheap.
 ## Branch and deploy discipline
 
 - Branch name: `feature/NNNN-slug`, matching the plan file.
-- One plan → one branch → one merge to `main`.
+- One plan → one branch → one fast-forward-only merge to `main` on the forge.
+  If `main` moved, rebase the branch on `origin/main` first.
 - Merge only after an **Accept** verdict.
+- Push to GitHub only from `main`, with `git push github main`, after
+  `FILTERHELM_REQUIRE_DENYLIST=1 ./.venv/bin/pytest` passes.
 - The plan file stays in the repo as the record of why the change looks the way it does;
   mark it `Status: shipped` on merge.
 - After merge, confirm the deploy came back up (the workflow curls

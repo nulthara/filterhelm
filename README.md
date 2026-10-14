@@ -270,6 +270,4 @@ mutated at a time rather than replacing the full list.
 
 ## TODO
 
-- Git history still carries internal addresses and endpoints; see
-  [docs/design.md §14](docs/design.md#14-public-release-readiness).
 - see [potential-features](docs/potential-features.md)

@@ -597,10 +597,8 @@ quarter's.
 
 ## 14. Public-release readiness
 
-- **Partially done — privacy scrub:** plan 0016 scrubbed the working tree,
-  guarded by `tests/test_repo_hygiene.py`. Git history still carries the
-  original values and must be handled at publish time by exporting a fresh
-  history or running `git filter-repo`.
+- **Done — privacy scrub:** plan 0016 scrubbed the working tree. Plan 0033
+  rewrote history for the public identity. `tests/test_repo_hygiene.py` guards both.
 - **TODO — licensing:** choose and add an open-source license.
 - **Done — access control:** local Argon2id administrator authentication with
   opaque server-side sessions is the default; deployments may explicitly use

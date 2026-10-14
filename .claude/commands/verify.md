@@ -29,9 +29,10 @@ Steps:
 4. Run the Definition-of-done checks: `./.venv/bin/pytest`, and if `frontend/` changed,
    `cd frontend && npm run build && npm run lint && npm test`. Report actual output.
 5. Verdict, one of:
-   - **Accept** — summarize; tell the user they can merge `feature/NNNN-slug` to `main`
+   - **Accept** — summarize; tell the user they can fast-forward merge `feature/NNNN-slug` to `main`
      (which auto-deploys) and mark the plan `Status: shipped`. After merging on the forge,
-     push `main` to the public mirror too; the forge merge does not update that remote.
+     push to GitHub only from `main`, with `git push github main`, after
+     `FILTERHELM_REQUIRE_DENYLIST=1 ./.venv/bin/pytest` passes.
    - **Iterate** — write numbered review notes referencing plan steps / rubric items;
      tell the user to run `/handoff NNNN --resume`.
    - **Escalate** — the plan itself is wrong; explain why and send them back to `/plan`
