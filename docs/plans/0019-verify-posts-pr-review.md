@@ -62,8 +62,8 @@ are the reason this is a plan rather than a five-minute edit.
 
 | Value | Source | Why not hardcode |
 | --- | --- | --- |
-| API base URL | `PIHOLE_MANAGER_FORGE_API` | Host and port are denylisted |
-| API token | `PIHOLE_MANAGER_FORGE_TOKEN` | The current variable name is denylisted |
+| API base URL | `FILTERHELM_FORGE_API` | Host and port are denylisted |
+| API token | `FILTERHELM_FORGE_TOKEN` | The current variable name is denylisted |
 | Owner and repo | parsed from `git remote get-url origin` | The account name is denylisted |
 
 Deriving owner/repo from the remote is better than a third variable. It is already correct in
@@ -138,8 +138,8 @@ No file under `app/`, `frontend/`, or `tests/` changes.
    The other entries stay as they are.
 
 2. **`.claude/commands/verify.md` — configuration preamble.** Before the new step, state that
-   posting requires `PIHOLE_MANAGER_FORGE_API` (base URL, scheme and port included, no trailing
-   slash) and `PIHOLE_MANAGER_FORGE_TOKEN`, and that owner and repo come from
+   posting requires `FILTERHELM_FORGE_API` (base URL, scheme and port included, no trailing
+   slash) and `FILTERHELM_FORGE_TOKEN`, and that owner and repo come from
    `git remote get-url origin`. Say that when either variable is unset the step is skipped with
    a one-line notice and the verdict is still reported in full.
 
@@ -180,7 +180,7 @@ No file under `app/`, `frontend/`, or `tests/` changes.
    environment variables and say they are set outside the repo because the hygiene guard
    forbids the forge's identifying details in tracked files.
 
-8. **Rename the environment variable.** The user sets `PIHOLE_MANAGER_FORGE_TOKEN` in their
+8. **Rename the environment variable.** The user sets `FILTERHELM_FORGE_TOKEN` in their
    fish configuration and removes the old one. This is a user action outside the repo; the plan
    records it so the reviewer knows the step exists. Nothing tracked references either name.
 
@@ -198,14 +198,14 @@ every route are untouched. The contracts below are with the forge's API, read fr
 
 | Variable | Example shape | Required |
 | --- | --- | --- |
-| `PIHOLE_MANAGER_FORGE_API` | `http://<host>:<port>/api/v1` | yes, else step skips |
-| `PIHOLE_MANAGER_FORGE_TOKEN` | opaque token string | yes, else step skips |
+| `FILTERHELM_FORGE_API` | `http://<host>:<port>/api/v1` | yes, else step skips |
+| `FILTERHELM_FORGE_TOKEN` | opaque token string | yes, else step skips |
 
 **Find the PR — request:**
 
 ```
 GET {api}/repos/{owner}/{repo}/pulls?state=open&limit=50
-Authorization: token {PIHOLE_MANAGER_FORGE_TOKEN}
+Authorization: token {FILTERHELM_FORGE_TOKEN}
 ```
 
 Response `200` is an array of `PullRequest`. Fields this plan relies on, all confirmed present:
@@ -223,7 +223,7 @@ There is no `head_branch` query parameter. Matching is client-side.
 
 ```
 POST {api}/repos/{owner}/{repo}/pulls/{number}/reviews
-Authorization: token {PIHOLE_MANAGER_FORGE_TOKEN}
+Authorization: token {FILTERHELM_FORGE_TOKEN}
 Content-Type: application/json
 
 {"body": "<verdict and rubric summary>", "event": "APPROVED"}
@@ -261,7 +261,7 @@ on every rewording.
 - **Manual, after implementation.** Run `/verify` against a branch with an open PR and confirm
   the review appears on it. This is the only way to exercise the API path, because authenticated
   calls cannot be made from the implementing environment.
-- **Manual, negative.** Unset `PIHOLE_MANAGER_FORGE_TOKEN` and confirm `/verify` still prints a
+- **Manual, negative.** Unset `FILTERHELM_FORGE_TOKEN` and confirm `/verify` still prints a
   complete review and skips posting with a notice rather than failing.
 
 ## Invariants at risk
@@ -307,7 +307,7 @@ enforces it with the guard.
 - [ ] With both environment variables set and a branch that has an open PR, `/verify` posts a
       review that appears in the PR's review timeline, and prints its `html_url`.
 - [ ] The posted body contains the verdict word, the rubric summary, and the pytest output.
-- [ ] With `PIHOLE_MANAGER_FORGE_TOKEN` unset, `/verify` prints a complete review and a
+- [ ] With `FILTERHELM_FORGE_TOKEN` unset, `/verify` prints a complete review and a
       one-line skip notice, and exits without error.
 - [ ] With a deliberately wrong token, `/verify` reports the scope problem and does not claim
       to have posted anything.

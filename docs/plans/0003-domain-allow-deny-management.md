@@ -3,7 +3,7 @@
 Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Revision: 2026-09-04 — (a) the live-instance round-trip originally assigned to Codex
 during implementation turned out not to be possible: Codex's sandbox has no filesystem
-access to `~/.config/pihole-manager` (instance config/credentials live outside the repo
+access to `~/.config/filterhelm` (instance config/credentials live outside the repo
 working directory) and no LAN egress to reach pihole1/pihole2, so it correctly stopped
 rather than guess. Implementation proceeded directly from the FTL OpenAPI spec fetched
 during planning (Approach, below); the live GET/POST/PUT/DELETE round-trip and the
@@ -211,7 +211,7 @@ segment against an already-validated instance destination.
    import CredentialStore, Instance, load_instances`, `from app.pihole_client import
    Domain, PiholeAPIError, PiholeClient`. Router: `router = APIRouter(prefix="/api")`.
    `credentials = CredentialStore()`. `_FANOUT_WORKERS` + `_fanout` copied verbatim from
-   `api.py` (same env var name `PIHOLE_MANAGER_FANOUT_WORKERS` — it's one process-wide
+   `api.py` (same env var name `FILTERHELM_FANOUT_WORKERS` — it's one process-wide
    knob, sharing the name is intentional even though the constant is duplicated).
    `_instance(name)`, `_client(instance)`, `_api_error(exc)` copied verbatim from
    `api.py` (identical bodies).

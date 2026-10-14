@@ -55,7 +55,7 @@ Date: 2026-09-08
 `AdlistAddInput.validate_address` runs `screen_adlist_url()`, which resolves the block-list
 host and screens every answer through `_screen_addresses()` — the same screen used for
 Pi-hole *instance* URLs, which requires public addresses to appear in
-`PIHOLE_MANAGER_PUBLIC_ALLOWLIST`. That allowlist exists to stop this app from being
+`FILTERHELM_PUBLIC_ALLOWLIST`. That allowlist exists to stop this app from being
 pointed at an arbitrary public host, but **this app never fetches an adlist URL**: only the
 target Pi-hole does, on its own gravity run. The result is that no ordinary public block
 list can be added at all — `https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/tif.txt`
@@ -96,7 +96,7 @@ In:
 Out:
 - Any change to instance-URL policy. `normalize_instance_url`, `resolve_instance_destination`,
   `validate_instance_destination`, `_screen_addresses`, and the
-  `PIHOLE_MANAGER_PUBLIC_ALLOWLIST` behaviour for instances are untouched.
+  `FILTERHELM_PUBLIC_ALLOWLIST` behaviour for instances are untouched.
 - Any new env knob to restore strict adlist screening. If it is ever wanted, it gets its
   own plan.
 - Any UI change beyond the `request()` helper — no new components, props, or screens.
@@ -439,7 +439,7 @@ on any parse failure fixes both: an unparseable address matches only itself.
      statement that block-list URLs are validated for syntax and canonicalized only — scheme,
      embedded credentials, control characters, and fragments are rejected, and a literal-IP
      host in a prohibited range is refused — but they are **not** resolved and **not** subject
-     to `PIHOLE_MANAGER_PUBLIC_ALLOWLIST`, because Pi-hole, not this app, fetches them.
+     to `FILTERHELM_PUBLIC_ALLOWLIST`, because Pi-hole, not this app, fetches them.
    - `docs/design.md`: extend the "Done — outbound request policy" bullet with the same
      instance-vs-block-list distinction.
    - `docs/potential-features.md`: **clear §6 entirely.** Every bug it documents is fixed by
@@ -492,7 +492,7 @@ def _audit_landed_write(instance: str, action: str, before: dict, after: dict) -
 ```
 
 **Config / DB:** N/A — no config key, no schema, no on-disk format changes.
-`PIHOLE_MANAGER_PUBLIC_ALLOWLIST` keeps its exact meaning for instance URLs.
+`FILTERHELM_PUBLIC_ALLOWLIST` keeps its exact meaning for instance URLs.
 
 ## Tests
 
@@ -500,7 +500,7 @@ def _audit_landed_write(instance: str, action: str, before: dict, after: dict) -
 
 - `test_adlist_url_allows_a_public_list_without_an_allowlist` — asserts
   `screen_adlist_url("https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/tif.txt")`
-  returns the URL unchanged, with `PIHOLE_MANAGER_PUBLIC_ALLOWLIST` unset. This is the
+  returns the URL unchanged, with `FILTERHELM_PUBLIC_ALLOWLIST` unset. This is the
   reported bug, asserted directly.
 - `test_adlist_url_is_canonicalized` — `"https://Example.COM/list.txt?format=hosts"` →
   `"https://example.com/list.txt?format=hosts"`; `"https://Example.com/"` → `"https://example.com"`.
@@ -678,7 +678,7 @@ framework in this plan.
 ## Acceptance criteria
 
 - [ ] `screen_adlist_url("https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/tif.txt")`
-      returns the URL unchanged with `PIHOLE_MANAGER_PUBLIC_ALLOWLIST` unset, and
+      returns the URL unchanged with `FILTERHELM_PUBLIC_ALLOWLIST` unset, and
       and the body of `screen_adlist_url` contains no reference to `getaddrinfo`, a
       `resolver` argument, or `get_public_allowlist`.
 - [ ] `screen_adlist_url` rejects, with `URLPolicyError`: `ftp://…`, an embedded-credentials

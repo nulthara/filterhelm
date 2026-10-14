@@ -184,8 +184,8 @@ code.
 ## Acceptance criteria
 
 - [ ] `cd frontend && npm run build && npm run lint` clean; `app/static/ui/` committed.
-- [ ] Manual check: log in, then delete the `pihole_manager_session` cookie (or wait out
-      `PIHOLE_MANAGER_COOKIE_SECURE`/idle window in a dev setup) and click any page
+- [ ] Manual check: log in, then delete the `filterhelm_session` cookie (or wait out
+      `FILTERHELM_COOKIE_SECURE`/idle window in a dev setup) and click any page
       action that calls the API — the app shows a "session expired" message and returns
       to the sign-in screen, instead of staying on the authenticated shell with a
       per-page error.

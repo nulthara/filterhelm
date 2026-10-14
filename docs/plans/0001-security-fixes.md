@@ -199,7 +199,7 @@ to a prohibited or non-allowlisted address.
 ## Acceptance criteria
 
 - [ ] `./.venv/bin/pytest` green, including the new tests.
-- [ ] After adding an instance via the running app, `ls -l ~/.config/pihole-manager`
+- [ ] After adding an instance via the running app, `ls -l ~/.config/filterhelm`
       shows `instances.yml`, `secrets.yml`, `auth.db` all `-rw-------`.
 - [ ] `curl -si -X POST -H 'Host: 127.0.0.1:80' -H 'Origin: http://127.0.0.1' --data '{}'
       http://127.0.0.1:8420/api/auth/logout` is not a `403` from the same-origin check.
