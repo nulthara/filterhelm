@@ -28,8 +28,8 @@ In:
   `app/static/ui/` bundle and the hashed `requirements.lock`.
 - `.dockerignore` to keep the build context small and secret-free.
 - `compose.yaml` as the portable, build-from-source example.
-- `deploy/pihole-manager.container` — the Podman Quadlet unit production installs.
-- `deploy/pihole-manager-redeploy` — the root-owned build-and-restart script the runner
+- `deploy/filterhelm.container` — the Podman Quadlet unit production installs.
+- `deploy/filterhelm-redeploy` — the root-owned build-and-restart script the runner
   calls through one sudoers rule.
 - `.gitea/workflows/deploy.yml` switched from venv install to the redeploy script.
 - `docs/deploy.md` rewritten for the container bootstrap, plus a cutover runbook from the
@@ -56,30 +56,30 @@ installs. Production runs it through a Podman Quadlet. Everyone else runs it thr
 - `pip install --no-cache-dir --root-user-action=ignore --require-hashes --only-binary=:all: -r requirements.lock`
   succeeds on that base. Every locked package ships a wheel.
 - The app is not pip-installed. `uvicorn app.main:app` and `python -m app.auth` run from
-  `WORKDIR /opt/pihole-manager`, and `app/main.py` mounts `app/static/ui` by relative path,
+  `WORKDIR /opt/filterhelm`, and `app/main.py` mounts `app/static/ui` by relative path,
   so the workdir must be the app root.
-- The app runs as uid/gid 10001 with `PIHOLE_MANAGER_DATA=/data`. `/data` is pre-created
+- The app runs as uid/gid 10001 with `FILTERHELM_DATA=/data`. `/data` is pre-created
   `0700` and owned by 10001, so named volumes inherit that ownership on first use.
 - The root filesystem can be read-only. The app writes only under the data dir
   (`app/config.py:_atomic_write` creates temp files beside the target).
 - The probe served `/api/auth/status` and `/app/` and created `/data/auth.db` mode `0600`.
 
 **Production runtime is rootful Podman with a Quadlet.** The Quadlet generates
-`pihole-manager.service`, so the unit name, `systemctl restart`, and
-`journalctl -u pihole-manager` stay as they are today. Rootless Podman was rejected
+`filterhelm.service`, so the unit name, `systemctl restart`, and
+`journalctl -u filterhelm` stay as they are today. Rootless Podman was rejected
 because it needs lingering, subuid ranges, and a user systemd instance inside an LXC,
 which is more moving parts for no gain on a single-purpose box. Docker was rejected by the
 user in favour of the daemonless runtime.
 
 **Host networking in production.** `Network=host` keeps today's listen posture
 (`0.0.0.0:8420` on the host). It also keeps real client addresses. With NAT those
-addresses would turn into a bridge gateway. That would break `PIHOLE_MANAGER_PROXY_TRUSTED_IPS`
+addresses would turn into a bridge gateway. That would break `FILTERHELM_PROXY_TRUSTED_IPS`
 matching in proxy mode, blur audit-log client addresses, and collapse pre-auth rate-limit
 keys. `compose.yaml` uses bridge networking with a loopback-only port, because a
 try-it-out install has no proxy.
 
 **Privilege boundary.** The runner gets no container-runtime access. It keeps exactly one
-passwordless sudo rule, now for `/usr/local/sbin/pihole-manager-redeploy` with no
+passwordless sudo rule, now for `/usr/local/sbin/filterhelm-redeploy` with no
 arguments. The script and the Quadlet are installed root-owned from the repo copies by
 hand. A pushed edit to `deploy/` therefore does nothing until an admin reinstalls it, so a
 compromised runner cannot rewrite what root executes. The runner still controls the
@@ -87,7 +87,7 @@ compromised runner cannot rewrite what root executes. The runner still controls 
 build steps in an unprivileged container and the runner already controls the app it ships.
 
 **Rollback.** The redeploy script builds `:latest`, restarts, and probes
-`/api/auth/status`. Only a passing probe promotes the image to `localhost/pihole-manager:good`.
+`/api/auth/status`. Only a passing probe promotes the image to `localhost/filterhelm:good`.
 A failed probe re-tags `:good` as `:latest`, restarts, and exits non-zero, so the workflow
 fails and production returns to the last image that answered. Failed deploys and retries
 never touch `:good`. An image that passes the probe but misbehaves is rolled back the
@@ -97,9 +97,9 @@ leaves the original in place, so a full return to the systemd unit stays possibl
 Revision 1 tagged the running image `:previous` before every build. A failed deploy
 followed by a retry then overwrote `:previous` with the broken image.
 
-**Data path is pinned.** The Quadlet sets `Environment=PIHOLE_MANAGER_DATA=/data`.
+**Data path is pinned.** The Quadlet sets `Environment=FILTERHELM_DATA=/data`.
 Podman gives `--env` precedence over `--env-file` regardless of flag order (checked on
-Podman 6.1.2), so a stray `PIHOLE_MANAGER_DATA` in `/etc/pihole-manager/env` cannot point
+Podman 6.1.2), so a stray `FILTERHELM_DATA` in `/etc/filterhelm/env` cannot point
 the app at an unmounted path. The cutover runbook also says not to copy that key.
 
 Alternatives rejected:
@@ -115,8 +115,8 @@ Alternatives rejected:
 - `.dockerignore` — new. Excludes VCS, venvs, node_modules, data, and local secrets from
   the build context.
 - `compose.yaml` — new. Portable build-from-source example.
-- `deploy/pihole-manager.container` — new. Production Quadlet unit. Pins the data path.
-- `deploy/pihole-manager-redeploy` — new, mode 0755 in git. Build, restart, probe,
+- `deploy/filterhelm.container` — new. Production Quadlet unit. Pins the data path.
+- `deploy/filterhelm-redeploy` — new, mode 0755 in git. Build, restart, probe,
   promote or roll back.
 - `.gitea/workflows/deploy.yml` — replace the install and restart steps with the redeploy
   script.
@@ -142,16 +142,16 @@ Alternatives rejected:
    ENV PYTHONDONTWRITEBYTECODE=1 \
        PYTHONUNBUFFERED=1 \
        PIP_DISABLE_PIP_VERSION_CHECK=1 \
-       PIHOLE_MANAGER_DATA=/data
+       FILTERHELM_DATA=/data
 
-   WORKDIR /opt/pihole-manager
+   WORKDIR /opt/filterhelm
 
    COPY requirements.lock ./
    RUN pip install --no-cache-dir --root-user-action=ignore --require-hashes --only-binary=:all: -r requirements.lock
 
-   RUN groupadd --gid 10001 pihole-manager \
+   RUN groupadd --gid 10001 filterhelm \
        && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent \
-          --shell /usr/sbin/nologin pihole-manager \
+          --shell /usr/sbin/nologin filterhelm \
        && install -d -o 10001 -g 10001 -m 0700 /data
 
    # The frontend is the committed build; the image never runs Node.
@@ -173,9 +173,9 @@ Alternatives rejected:
    ```yaml
    # Portable install. Build from a clone: docker compose up -d --build
    services:
-     pihole-manager:
+     filterhelm:
        build: .
-       image: localhost/pihole-manager:latest
+       image: localhost/filterhelm:latest
        restart: unless-stopped
        read_only: true
        tmpfs:
@@ -187,36 +187,36 @@ Alternatives rejected:
        ports:
          - "127.0.0.1:8420:8420"
        environment:
-         PIHOLE_MANAGER_AUTH_MODE: local
+         FILTERHELM_AUTH_MODE: local
          # Loopback HTTP only. Behind an HTTPS proxy, set this to "true" and add the public host below.
-         PIHOLE_MANAGER_COOKIE_SECURE: "false"
-         PIHOLE_MANAGER_TRUSTED_HOSTS: localhost,127.0.0.1
+         FILTERHELM_COOKIE_SECURE: "false"
+         FILTERHELM_TRUSTED_HOSTS: localhost,127.0.0.1
        volumes:
-         - pihole-manager-data:/data
+         - filterhelm-data:/data
 
    volumes:
-     pihole-manager-data:
+     filterhelm-data:
    ```
 
-4. **`deploy/pihole-manager.container`.** Installed to
-   `/etc/containers/systemd/pihole-manager.container`.
+4. **`deploy/filterhelm.container`.** Installed to
+   `/etc/containers/systemd/filterhelm.container`.
 
    ```ini
    # Installed root-owned to /etc/containers/systemd/. See docs/deploy.md.
    [Unit]
-   Description=Pi-hole Manager
+   Description=FilterHelm
    Wants=network-online.target
    After=network-online.target
 
    [Container]
-   Image=localhost/pihole-manager:latest
-   ContainerName=pihole-manager
+   Image=localhost/filterhelm:latest
+   ContainerName=filterhelm
    Pull=never
    Network=host
-   Volume=/var/lib/pihole-manager:/data
-   EnvironmentFile=/etc/pihole-manager/env
+   Volume=/var/lib/filterhelm:/data
+   EnvironmentFile=/etc/filterhelm/env
    # Wins over EnvironmentFile; the volume is mounted only at /data.
-   Environment=PIHOLE_MANAGER_DATA=/data
+   Environment=FILTERHELM_DATA=/data
    ReadOnly=true
    NoNewPrivileges=true
    DropCapability=ALL
@@ -231,7 +231,7 @@ Alternatives rejected:
    Do not add `AutoUpdate=`, `HealthCmd=`, or any timer. `ReadOnly=true` already mounts a
    tmpfs at `/tmp` by Podman's default.
 
-5. **`deploy/pihole-manager-redeploy`.** POSIX sh, `chmod 0755` in git
+5. **`deploy/filterhelm-redeploy`.** POSIX sh, `chmod 0755` in git
    (`git update-index --chmod=+x` if needed).
 
    ```sh
@@ -239,7 +239,7 @@ Alternatives rejected:
    # Installed root-owned to /usr/local/sbin/. The runner may run it only through sudo.
    set -eu
 
-   image=localhost/pihole-manager
+   image=localhost/filterhelm
 
    healthy() {
        for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -250,20 +250,20 @@ Alternatives rejected:
    }
 
    # Unprivileged LXCs lack /dev/net/tun, so build steps use host networking.
-   podman build --network=host --pull=missing --tag "$image:latest" /opt/pihole-manager
+   podman build --network=host --pull=missing --tag "$image:latest" /opt/filterhelm
 
    # Promote to last-known-good only after the new container answers.
-   if systemctl restart pihole-manager.service && healthy; then
+   if systemctl restart filterhelm.service && healthy; then
        podman tag "$image:latest" "$image:good"
        podman image prune --force
        exit 0
    fi
 
-   echo "pihole-manager failed its health probe" >&2
+   echo "filterhelm failed its health probe" >&2
    if podman image exists "$image:good"; then
        echo "rolling back to $image:good" >&2
        podman tag "$image:good" "$image:latest"
-       systemctl restart pihole-manager.service
+       systemctl restart filterhelm.service
    fi
    exit 1
    ```
@@ -280,8 +280,8 @@ Alternatives rejected:
 
      ```yaml
      - name: Build image and restart
-       # Must exactly match /etc/sudoers.d/gitea-runner-pihole-manager.
-       run: sudo /usr/local/sbin/pihole-manager-redeploy
+       # Must exactly match /etc/sudoers.d/gitea-runner-filterhelm.
+       run: sudo /usr/local/sbin/filterhelm-redeploy
      ```
    - Keep "Confirm it came back up" unchanged. Its comment cites "docs/deploy.md §4" for
      the sudoers rule; point it at the section that holds the rule after step 7.
@@ -299,68 +299,68 @@ Alternatives rejected:
        and pip lines.
    - **§5 Install the container units.** Use these commands:
      ```bash
-     sudo install -d -m 0700 /etc/pihole-manager
-     sudo install -m 0600 /dev/null /etc/pihole-manager/env   # then edit; see below
-     sudo install -d -o 10001 -g 10001 -m 0700 /var/lib/pihole-manager
-     sudo install -o root -g root -m 0644 /opt/pihole-manager/deploy/pihole-manager.container /etc/containers/systemd/
-     sudo install -o root -g root -m 0755 /opt/pihole-manager/deploy/pihole-manager-redeploy /usr/local/sbin/
+     sudo install -d -m 0700 /etc/filterhelm
+     sudo install -m 0600 /dev/null /etc/filterhelm/env   # then edit; see below
+     sudo install -d -o 10001 -g 10001 -m 0700 /var/lib/filterhelm
+     sudo install -o root -g root -m 0644 /opt/filterhelm/deploy/filterhelm.container /etc/containers/systemd/
+     sudo install -o root -g root -m 0755 /opt/filterhelm/deploy/filterhelm-redeploy /usr/local/sbin/
      sudo systemctl daemon-reload
      ```
      Show the `env` file contents as `KEY=value` lines carrying today's `Environment=`
-     values (`PIHOLE_MANAGER_AUTH_MODE`, `PIHOLE_MANAGER_COOKIE_SECURE`,
-     `PIHOLE_MANAGER_TRUSTED_HOSTS` including `127.0.0.1`, and an optional commented
-     `PIHOLE_MANAGER_PUBLIC_ALLOWLIST`). Say not to set `PIHOLE_MANAGER_DATA` there,
+     values (`FILTERHELM_AUTH_MODE`, `FILTERHELM_COOKIE_SECURE`,
+     `FILTERHELM_TRUSTED_HOSTS` including `127.0.0.1`, and an optional commented
+     `FILTERHELM_PUBLIC_ALLOWLIST`). Say not to set `FILTERHELM_DATA` there,
      because the Quadlet pins it to `/data`. Say that edits to `deploy/` in git take
      effect only after this step is re-run.
    - **§6 The one sudoers rule.** Replace today's rule with exactly:
      ```
-     gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/pihole-manager-redeploy
+     gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/filterhelm-redeploy
      ```
      Explain why the runner is not in a container-runtime group.
-   - **§7 First start.** `sudo /usr/local/sbin/pihole-manager-redeploy`, then
-     `sudo podman exec -it pihole-manager python -m app.auth set-password --username admin`,
+   - **§7 First start.** `sudo /usr/local/sbin/filterhelm-redeploy`, then
+     `sudo podman exec -it filterhelm python -m app.auth set-password --username admin`,
      then `curl -fsS http://127.0.0.1:8420/api/auth/status`. A Quadlet unit is not
      `systemctl enable`d, because the `[Install]` section is applied by the generator.
    - **§8 Cutover from the systemd install.** For a host already running the venv unit.
      0. Put the new files on the host before merging. With the feature branch pushed, run
-        `sudo -u gitea-runner git -C /opt/pihole-manager fetch origin feature/0025-container-deploy`
-        and then `sudo -u gitea-runner git -C /opt/pihole-manager checkout --detach FETCH_HEAD`.
+        `sudo -u gitea-runner git -C /opt/filterhelm fetch origin feature/0025-container-deploy`
+        and then `sudo -u gitea-runner git -C /opt/filterhelm checkout --detach FETCH_HEAD`.
         The next deploy run resets the checkout to `origin/main`.
-     1. Find the current data dir. It is the unit's `PIHOLE_MANAGER_DATA` from
-        `systemctl show -p Environment pihole-manager.service`, else
-        `<home of pihole-manager>/.config/pihole-manager` from `getent passwd pihole-manager`.
+     1. Find the current data dir. It is the unit's `FILTERHELM_DATA` from
+        `systemctl show -p Environment filterhelm.service`, else
+        `<home of filterhelm>/.config/filterhelm` from `getent passwd filterhelm`.
         Confirm it holds `auth.db`, `instances.yml`, and `secrets.yml`.
      2. Complete §4–§6, copying the unit's `Environment=` lines into
-        `/etc/pihole-manager/env`, except `PIHOLE_MANAGER_DATA`. Step 1 already used
+        `/etc/filterhelm/env`, except `FILTERHELM_DATA`. Step 1 already used
         that value to find the data to copy.
-     3. `sudo systemctl disable --now pihole-manager.service`, then
-        `sudo rm /etc/systemd/system/pihole-manager.service` and `sudo systemctl daemon-reload`.
+     3. `sudo systemctl disable --now filterhelm.service`, then
+        `sudo rm /etc/systemd/system/filterhelm.service` and `sudo systemctl daemon-reload`.
         State why: a unit file in `/etc/systemd/system` overrides the Quadlet's
         generated unit of the same name.
-     4. `sudo cp -a <old data dir>/. /var/lib/pihole-manager/` and
-        `sudo chown -R 10001:10001 /var/lib/pihole-manager`. Leave the old dir in place.
-     5. Run §7's redeploy and curl. Confirm `sudo podman exec pihole-manager printenv PIHOLE_MANAGER_DATA`
-        prints `/data`, and `sudo podman exec pihole-manager ls -l /data` lists the migrated
+     4. `sudo cp -a <old data dir>/. /var/lib/filterhelm/` and
+        `sudo chown -R 10001:10001 /var/lib/filterhelm`. Leave the old dir in place.
+     5. Run §7's redeploy and curl. Confirm `sudo podman exec filterhelm printenv FILTERHELM_DATA`
+        prints `/data`, and `sudo podman exec filterhelm ls -l /data` lists the migrated
         files. Then sign in with the existing account. Skip `set-password`.
-     6. After the next push deploys green, `sudo rm -rf /opt/pihole-manager/.venv`.
+     6. After the next push deploys green, `sudo rm -rf /opt/filterhelm/.venv`.
    - **§9 Rollback.**
      - Failed probe: automatic. The redeploy script restores `:good` and the deploy run fails.
-     - Manual restore of the last good image: `sudo podman tag localhost/pihole-manager:good localhost/pihole-manager:latest`,
-       then `sudo systemctl restart pihole-manager.service`.
+     - Manual restore of the last good image: `sudo podman tag localhost/filterhelm:good localhost/filterhelm:latest`,
+       then `sudo systemctl restart filterhelm.service`.
      - An image that passes the probe but misbehaves: revert the commit on `main` and push.
      - Abandon containers: remove the Quadlet file, restore the old unit and sudoers rule,
        and recreate the venv from the old runbook in git history. The old data dir is
        untouched.
    - **§10 First deploy.** Today's §6 text, updated to three green steps (pull, build and
-     restart, confirm-up) and `journalctl -u pihole-manager` for failures.
+     restart, confirm-up) and `journalctl -u filterhelm` for failures.
 
 8. **`README.md`.**
    - Under "Run the application", add a short "Or with containers" block:
      `docker compose up -d --build` (or `podman compose`), then
-     `docker compose exec pihole-manager python -m app.auth set-password --username admin`,
+     `docker compose exec filterhelm python -m app.auth set-password --username admin`,
      then open `http://127.0.0.1:8420/`. Point production readers to `docs/deploy.md`.
-   - In "Authentication", replace the `sudo -u pihole-manager …/.venv/bin/python` command
-     with `sudo podman exec -it pihole-manager python -m app.auth set-password --username admin`.
+   - In "Authentication", replace the `sudo -u filterhelm …/.venv/bin/python` command
+     with `sudo podman exec -it filterhelm python -m app.auth set-password --username admin`.
      Reword the sentence above it, because the container user now fixes the data dir.
    - Leave the venv dev and test commands as they are.
 
@@ -369,7 +369,7 @@ Alternatives rejected:
      paragraph and the Quadlet's `[Container]` keys. Point to `docs/deploy.md`.
    - Keep the bind-address paragraph, and note that `Network=host` preserves it.
    - Update the credential-storage paragraph. The fallback file now lives at
-     `/var/lib/pihole-manager/secrets.yml` on the host (`/data` in the container).
+     `/var/lib/filterhelm/secrets.yml` on the host (`/data` in the container).
    - Change the §14 "TODO — distribution" bullet to say the container image and Compose
      example ship, and that a versioned release archive is still open.
 
@@ -377,8 +377,8 @@ Alternatives rejected:
 
 11. **Revision 2 delta.** The branch already carries revision 1 as commit `dcee7e2`.
     Change only these, on top of it:
-    - `deploy/pihole-manager-redeploy` — replace with step 5's script.
-    - `deploy/pihole-manager.container` — add step 4's `Environment=` line and comment.
+    - `deploy/filterhelm-redeploy` — replace with step 5's script.
+    - `deploy/filterhelm.container` — add step 4's `Environment=` line and comment.
     - `docs/deploy.md` — §5 env-file note, §8 steps 2 and 5, and §9, per step 7. Remove
       every `:previous` mention. In §6, say that the script probes and rolls back.
     - `docs/design.md` — if its Quadlet block lists `[Container]` keys, add the
@@ -393,15 +393,15 @@ Deployment contracts, which must agree across files:
 
 | Item | Value | Files that must agree |
 | --- | --- | --- |
-| Redeploy command | `/usr/local/sbin/pihole-manager-redeploy` | `deploy.yml`, `docs/deploy.md` sudoers line, script header |
-| Image name | `localhost/pihole-manager:latest` (last-known-good `:good`) | script, Quadlet `Image=`, `compose.yaml` `image:` |
-| Systemd unit | `pihole-manager.service` (generated from `pihole-manager.container`) | script, docs |
-| Container data path | `/data`, via `PIHOLE_MANAGER_DATA` | `Dockerfile`, Quadlet `Volume=` and `Environment=`, `compose.yaml` |
-| Host data path | `/var/lib/pihole-manager`, owner `10001:10001`, mode `0700` | Quadlet, docs |
-| Env file | `/etc/pihole-manager/env`, root `0600` | Quadlet, docs |
+| Redeploy command | `/usr/local/sbin/filterhelm-redeploy` | `deploy.yml`, `docs/deploy.md` sudoers line, script header |
+| Image name | `localhost/filterhelm:latest` (last-known-good `:good`) | script, Quadlet `Image=`, `compose.yaml` `image:` |
+| Systemd unit | `filterhelm.service` (generated from `filterhelm.container`) | script, docs |
+| Container data path | `/data`, via `FILTERHELM_DATA` | `Dockerfile`, Quadlet `Volume=` and `Environment=`, `compose.yaml` |
+| Host data path | `/var/lib/filterhelm`, owner `10001:10001`, mode `0700` | Quadlet, docs |
+| Env file | `/etc/filterhelm/env`, root `0600` | Quadlet, docs |
 | Listen | `0.0.0.0:8420` in the container; host network in production | `Dockerfile` `CMD`, Quadlet |
 
-Existing env keys (`PIHOLE_MANAGER_*`) are unchanged in name and meaning.
+Existing env keys (`FILTERHELM_*`) are unchanged in name and meaning.
 
 ## Tests
 
@@ -417,23 +417,23 @@ Existing env keys (`PIHOLE_MANAGER_*`) are unchanged in name and meaning.
 
 `tests/test_container.py` (new):
 - `test_workflow_runs_redeploy_script_through_sudo` — `deploy.yml` contains the line
-  `run: sudo /usr/local/sbin/pihole-manager-redeploy`, and that is the only `sudo` use in
+  `run: sudo /usr/local/sbin/filterhelm-redeploy`, and that is the only `sudo` use in
   the workflow.
 - `test_sudoers_rule_matches_workflow` — `docs/deploy.md` contains exactly
-  `gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/pihole-manager-redeploy`.
-- `test_redeploy_script_is_executable` — `git ls-files -s deploy/pihole-manager-redeploy`
+  `gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/filterhelm-redeploy`.
+- `test_redeploy_script_is_executable` — `git ls-files -s deploy/filterhelm-redeploy`
   reports mode `100755`.
-- `test_quadlet_never_pulls_or_auto_updates` — `deploy/pihole-manager.container` has
-  `Pull=never`, has `Image=localhost/pihole-manager:latest`, and has no `AutoUpdate=`
+- `test_quadlet_never_pulls_or_auto_updates` — `deploy/filterhelm.container` has
+  `Pull=never`, has `Image=localhost/filterhelm:latest`, and has no `AutoUpdate=`
   key (invariant 4).
 - `test_container_runs_as_non_root` — `Dockerfile` has a `USER 10001:10001` line after its
   last `RUN`, and `compose.yaml` and the Quadlet both set a read-only root
   (`read_only: true` / `ReadOnly=true`).
 
 Revision 2 adds to `tests/test_container.py`:
-- `test_quadlet_pins_data_path` — the Quadlet has `Environment=PIHOLE_MANAGER_DATA=/data`
-  and `Volume=/var/lib/pihole-manager:/data`.
-- Behaviour tests that run `deploy/pihole-manager-redeploy` with `sh` and a `tmp_path` bin
+- `test_quadlet_pins_data_path` — the Quadlet has `Environment=FILTERHELM_DATA=/data`
+  and `Volume=/var/lib/filterhelm:/data`.
+- Behaviour tests that run `deploy/filterhelm-redeploy` with `sh` and a `tmp_path` bin
   directory first on `PATH`. That directory holds stub `podman`, `systemctl`, `curl`, and
   `sleep` scripts. Each stub appends its argv to a log file. Environment variables set the
   stubs' exit codes: build result, `podman image exists` result, restart result, and
@@ -485,22 +485,22 @@ and smoke run are reviewer acceptance criteria, not Codex tests.
 
 - [ ] `./.venv/bin/pytest` green, including the new and renamed tests.
 - [ ] Diff touches only the Files list. Nothing under `app/` or `frontend/` changes.
-- [ ] Reviewer runs `podman build -t localhost/pihole-manager:review .` from the branch,
+- [ ] Reviewer runs `podman build -t localhost/filterhelm:review .` from the branch,
       and it succeeds.
-- [ ] Reviewer runs the image with `--read-only -p 127.0.0.1:18420:8420 -e PIHOLE_MANAGER_COOKIE_SECURE=false`.
+- [ ] Reviewer runs the image with `--read-only -p 127.0.0.1:18420:8420 -e FILTERHELM_COOKIE_SECURE=false`.
       `curl http://127.0.0.1:18420/api/auth/status` returns `200` with `"configured":false`,
       and `curl -I …/app/` returns `200`.
 - [ ] In that container, `id` shows uid 10001, and `/data/auth.db` exists with mode `0600`.
 - [ ] `podman exec -it … python -m app.auth set-password --username admin` succeeds, and
       signing in through the browser works.
-- [ ] `podman run --rm --entrypoint sh <image> -c 'ls -A /opt/pihole-manager'` shows only `app` and
+- [ ] `podman run --rm --entrypoint sh <image> -c 'ls -A /opt/filterhelm'` shows only `app` and
       `requirements.lock`, with no `.git`, `.venv`, `data`, or `frontend`.
 - [ ] `docker compose config` (or `podman compose config`) parses `compose.yaml`.
 - [ ] `deploy.yml`, the sudoers line in `docs/deploy.md`, and the script path agree
       character for character.
 - [ ] The redeploy behaviour tests pass, and `grep -rn ':previous'` over the branch finds
       nothing outside this plan.
-- [ ] Reviewer runs the review image with `--env-file` holding `PIHOLE_MANAGER_DATA=/elsewhere`
-      plus `-e PIHOLE_MANAGER_DATA=/data`, and `printenv PIHOLE_MANAGER_DATA` prints `/data`.
+- [ ] Reviewer runs the review image with `--env-file` holding `FILTERHELM_DATA=/elsewhere`
+      plus `-e FILTERHELM_DATA=/data`, and `printenv FILTERHELM_DATA` prints `/data`.
 - [ ] `docs/deploy.md` §8 orders the steps so the host checks out the feature branch
       first, removes the old unit before the first redeploy, and merges to `main` last.

@@ -275,109 +275,7 @@ the generator, producing `filterhelm.service` for boot and normal service
 management. Podman auto-update is not enabled; deployments are initiated by
 pushes to `main`.
 
-## 8. Cutover from pihole-manager
-
-Steps 0–7 run on the deploy host before merging `feature/0030-rebrand-filterhelm`,
-after the branch is pushed.
-
-0. **Rename the forge repo first, if renaming it.** Do this in the forge UI
-   before step 2, because step 2 fetches through the new remote URL.
-
-1. **Stop the service.**
-
-   ```bash
-   sudo systemctl stop pihole-manager.service
-   ```
-
-2. **Move the checkout and fetch the branch.**
-
-   ```bash
-   sudo mv /opt/pihole-manager /opt/filterhelm
-   ```
-
-   If the repo was renamed, run:
-
-   ```bash
-   sudo -u gitea-runner git -C /opt/filterhelm remote set-url origin <new URL>
-   ```
-
-   Then fetch the branch and check it out:
-
-   ```bash
-   sudo -u gitea-runner git -C /opt/filterhelm fetch origin feature/0030-rebrand-filterhelm
-   sudo -u gitea-runner git -C /opt/filterhelm checkout --detach FETCH_HEAD
-   ```
-
-3. **Move config and rename env keys.**
-
-   ```bash
-   sudo mv /etc/pihole-manager /etc/filterhelm
-   sudo sed -i 's/^PIHOLE_MANAGER_/FILTERHELM_/' /etc/filterhelm/env
-   sudo cat /etc/filterhelm/env
-   sudo grep -n 'PIHOLE_MANAGER_' /etc/filterhelm/env
-   ```
-
-   Check the displayed file and confirm grep prints nothing (exit status 1).
-
-4. **Move data.**
-
-   ```bash
-   sudo mv /var/lib/pihole-manager /var/lib/filterhelm
-   ```
-
-   Ownership stays `10001:10001`.
-
-5. **Swap the units.**
-
-   ```bash
-   sudo rm /etc/containers/systemd/pihole-manager.container
-   sudo rm /usr/local/sbin/pihole-manager-redeploy
-   sudo rm /etc/sudoers.d/gitea-runner-pihole-manager
-   sudo install -o root -g root -m 0644 /opt/filterhelm/deploy/filterhelm.container /etc/containers/systemd/
-   sudo install -o root -g root -m 0755 /opt/filterhelm/deploy/filterhelm-redeploy /usr/local/sbin/
-   ```
-
-   Create the new sudoers file per §6, then reload:
-
-   ```bash
-   sudo systemctl daemon-reload
-   ```
-
-6. **Start and verify.**
-
-   ```bash
-   sudo /usr/local/sbin/filterhelm-redeploy
-   curl -fsS http://127.0.0.1:8420/api/auth/status
-   ```
-
-   This first run has no `:good` image, so a failure does not roll back.
-   Recover by fixing forward or by reversing steps 1–5.
-
-7. **Relabel the runner.** Change the runner's label to `filterhelm-deploy:host`.
-   Edit the `labels` array in `/home/gitea-runner/.runner`, or re-register per §3,
-   then restart:
-
-   ```bash
-   sudo systemctl restart gitea-runner.service
-   ```
-
-   Confirm the forge lists the new label.
-
-8. **Merge.** The deploy run resets `/opt/filterhelm` to `origin/main`.
-   Watch it go green.
-
-9. **Clean up after a green deploy.**
-
-   ```bash
-   sudo podman image rm localhost/pihole-manager:latest localhost/pihole-manager:good
-   ```
-
-   Optionally update the runner unit's `Description`.
-
-10. **Dev machine.** Rename `PIHOLE_MANAGER_FORGE_API`/`PIHOLE_MANAGER_FORGE_TOKEN`
-    to `FILTERHELM_FORGE_API`/`FILTERHELM_FORGE_TOKEN` in `~/.zshenv`.
-
-## 9. Rollback
+## 8. Rollback
 
 A failed restart or probe automatically restores `:good` when it exists, and
 the deploy run fails. Failed deploys and retries never overwrite `:good`.
@@ -392,14 +290,7 @@ sudo systemctl restart filterhelm.service
 Only a passing probe promotes an image to `:good`. For an image that passes
 the probe but misbehaves, revert the commit on `main` and push.
 
-To abandon containers, stop the service, remove
-`/etc/containers/systemd/filterhelm.container`, restore the saved old unit
-and sudoers rule, and recreate the venv from the old runbook in git history.
-Reload systemd and enable/start the restored service. The old data directory
-is untouched by cutover; changes made after cutover are in the container's
-host data directory.
-
-## 10. First deploy
+## 9. First deploy
 
 Push any commit to `main` (or re-push the current HEAD) and watch the
 **Actions** tab on the `filterhelm` repo. Expect three green steps: pull,

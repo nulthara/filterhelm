@@ -368,7 +368,7 @@ domains, groups, and clients, a `fail` map, and a `calls` log recording
 3. **Gravity gated behind real changes** — untouched. No adlist is created, updated, or
    deleted, so no gravity run is triggered and `load_pending_gravity` is not consulted.
 4. **No background scheduler** — the page fetches once on mount and once per explicit
-   Refresh click. No interval, no polling, no `X-Pihole-Manager-Poll` header, no startup job.
+   Refresh click. No interval, no polling, no `X-FilterHelm-Poll` header, no startup job.
 5. **FastAPI owns all credentials** — `drift.py` gets passwords from its own
    `CredentialStore()` exactly as `lookup.py` does. The response carries instance *names*,
    entry keys, and display strings only. No `base_url`, no password, no app-password, and the

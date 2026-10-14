@@ -116,7 +116,7 @@ convention instead of two.
 | the abbreviated addresses in the §8 mockup | `.1.2` / `.1.18` / `.1.40` / `.1.41` |
 | the personal domain and its Gitea subdomain | `example.com`, `git.example.com` |
 | the router hostname and internal DNS tier hostnames | `router.example.com`, `switch.example.com`, `nas.example.com` |
-| the application hostnames | `pihole-manager.example.com` |
+| the application hostnames | `filterhelm.example.com` |
 | the Gitea SSH port | `2222` |
 | the numbered containers | `the deploy host`, `the Gitea host`, `a container`, `the proxy host` |
 | the hypervisor host | `the hypervisor host` |
@@ -241,7 +241,7 @@ whole-file-exclusion gap rather than narrowing it.
 **Absence of the denylist file must be loud on the author's machine and quiet elsewhere.**
 A public clone cannot supply the file, so its test skips with a printed notice. On a machine
 that is supposed to have it, a silent skip is how the check dies unnoticed, so setting
-`PIHOLE_MANAGER_REQUIRE_DENYLIST=1` turns absence into a failure.
+`FILTERHELM_REQUIRE_DENYLIST=1` turns absence into a failure.
 
 **Decoding replaces skipping.** Revision 1 silently skipped any file that was not valid
 UTF-8, so one stray byte suppressed a whole file. Decoding with `errors="replace"` scans
@@ -340,7 +340,7 @@ file **staged**, not committed:
    | pihole1 | 192.168.1.2 | Docker container on a macvlan network (not SSH-able) |
    | pihole2 | 192.168.1.3 | Container on a separate host, normal Debian |
 
-   Line 8's clone URL becomes `git@git.example.com:pihole-manager.git`. Keep the
+   Line 8's clone URL becomes `git@git.example.com:filterhelm.git`. Keep the
    nebula-sync failure narrative verbatim; it is the source of the project invariants.
 
 2. **`docs/design.md` scattered references.** Lines 12, 15, 23, 44, 71, 77, 174, 294, 336,
@@ -381,7 +381,7 @@ file **staged**, not committed:
 
 7. **`.gitea/workflows/deploy.yml`.** Line 1 becomes
    `# Deploys to the host this runner lives on — see docs/deploy.md.` No other line changes;
-   the `pihole-manager-deploy` runner label is not identifying.
+   the `filterhelm-deploy` runner label is not identifying.
 
 8. **Source comments.** Docstring text only; no code moves.
    - `app/config.py:6` → `Design doc: docs/design.md §7.3.`
@@ -544,7 +544,7 @@ file **staged**, not committed:
       Reports each hit as `path:line: category: text`.
     - `test_tracked_files_carry_no_known_private_tokens` — loads `.private-denylist.toml`
       when present and applies every pattern case-insensitively. When the file is absent it
-      calls `pytest.skip()` naming the file, unless `PIHOLE_MANAGER_REQUIRE_DENYLIST=1` is
+      calls `pytest.skip()` naming the file, unless `FILTERHELM_REQUIRE_DENYLIST=1` is
       set, in which case it fails.
 
 18. **`docs/plans/0003-domain-allow-deny-management.md:531`.** The `dig @<host>` argument is
@@ -588,7 +588,7 @@ contract. `frontend/src/api.ts` is not touched.
 - `tests/test_repo_hygiene.py::test_tracked_files_carry_no_known_private_tokens` —
   loads `.private-denylist.toml`, applies each pattern case-insensitively to every
   tracked file, and reports hits the same way. Skips with a printed notice when the
-  file is absent; fails instead when `PIHOLE_MANAGER_REQUIRE_DENYLIST=1`.
+  file is absent; fails instead when `FILTERHELM_REQUIRE_DENYLIST=1`.
 - **Negative control (Step 21).** Both tests run against a scratch worktree at
   `ee22c40` and must report the removed lines, including the abbreviated address in the
   §8 diagram, the bare-port prose in the runbook, the un-spaced container id, and the
@@ -675,7 +675,7 @@ into this file.
 - [ ] `tests/test_repo_hygiene.py` contains no `SKIP` set and no `UnicodeDecodeError`
       handler.
 - [ ] Moving `.private-denylist.toml` aside makes the denylist test skip with a message
-      naming the file; with `PIHOLE_MANAGER_REQUIRE_DENYLIST=1` set it fails instead.
+      naming the file; with `FILTERHELM_REQUIRE_DENYLIST=1` set it fails instead.
 - [ ] Both tests run against a scratch worktree at `ee22c40` report hits, including the
       four restorations Codex used to evade Revision 1.
 - [ ] Appending any private address outside the approved set to a tracked file fails

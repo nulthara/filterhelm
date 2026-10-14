@@ -273,11 +273,3 @@ mutated at a time rather than replacing the full list.
 - Git history still carries internal addresses and endpoints; see
   [docs/design.md §14](docs/design.md#14-public-release-readiness).
 - see [potential-features](docs/potential-features.md)
-
-## Upgrading from pihole-manager
-
-- Rename `PIHOLE_MANAGER_*` environment variables to `FILTERHELM_*`.
-- Local installs run `mv ~/.config/pihole-manager ~/.config/filterhelm`.
-- Keyring users re-enter instance app passwords.
-- Compose users get a new volume, so copy data from `pihole-manager-data` or start fresh.
-- Everyone signs in again.

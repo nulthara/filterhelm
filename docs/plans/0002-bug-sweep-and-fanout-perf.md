@@ -26,7 +26,7 @@ security pass. The worst of them make whole features unusable:
   authenticated instance to `error` and drops all version data.
 - **#10** — `GET /api/instances`, `/api/status`, `/api/adlists`, `/api/dns/records` walk
   every instance **sequentially**, each leg up to a 15 s timeout, and every
-  `PiholeClient()` re-parses `PIHOLE_MANAGER_PUBLIC_ALLOWLIST` from the environment and
+  `PiholeClient()` re-parses `FILTERHELM_PUBLIC_ALLOWLIST` from the environment and
   runs a blocking `getaddrinfo`. With the #9 change this roughly doubled per-instance
   latency.
 
@@ -103,7 +103,7 @@ change to `PiholeClient` — it picks up the cached default for free.
 `app/routes/api.py`: a `concurrent.futures.ThreadPoolExecutor(max_workers=_FANOUT_WORKERS)`
 created inside the helper, `map`-style, results returned in input order, executor
 `shutdown()` before returning (request-scoped, no background thread survives the
-response). `_FANOUT_WORKERS = max(1, int(os.environ.get("PIHOLE_MANAGER_FANOUT_WORKERS",
+response). `_FANOUT_WORKERS = max(1, int(os.environ.get("FILTERHELM_FANOUT_WORKERS",
 "8")))`. Apply to `instances_list`, `status_list`, `adlists_list`, `dns_records_list`
 only. The mutating fan-outs (`blocking_update`, `adlist_add`) stay a sequential `for`
 loop — see Invariants. Each worker touches exactly one instance and only reads.
@@ -264,7 +264,7 @@ Rejected alternatives:
   `login_allowed(remote_addr, username)`; `authenticate` writes/clears by username (#1).
 - `app/routes/auth.py` — pass `payload.username` to `login_allowed` / `authenticate` (#1).
 - `README.md` — per-username lockout + residual (#1); adlist SSRF screen, best-effort
-  (#4); concurrent list endpoints + `PIHOLE_MANAGER_FANOUT_WORKERS` (#10).
+  (#4); concurrent list endpoints + `FILTERHELM_FANOUT_WORKERS` (#10).
 - `tests/conftest.py` — **new**: autouse fixture calling
   `get_public_allowlist.cache_clear()` before/after each test.
 - `tests/test_url_policy.py`, `tests/test_api.py`, `tests/test_auth.py`,
@@ -315,7 +315,7 @@ Rejected alternatives:
    self.base_url = self.base_url.strip()`. Import `URLPolicyError`. Comment:
    `# issue #2: a non-canonical stored base_url must not blow up load_instances() for every route`.
 7. **#10b** `app/routes/api.py`: `import concurrent.futures`, `import os`. Add
-   `_FANOUT_WORKERS = max(1, int(os.environ.get("PIHOLE_MANAGER_FANOUT_WORKERS", "8")))`
+   `_FANOUT_WORKERS = max(1, int(os.environ.get("FILTERHELM_FANOUT_WORKERS", "8")))`
    and `def _fanout(items, worker): ... ` using a request-scoped
    `ThreadPoolExecutor(max_workers=min(_FANOUT_WORKERS, len(items) or 1))`, preserving
    input order, `shutdown(wait=True)` before returning. Comment:
@@ -395,7 +395,7 @@ Rejected alternatives:
     `@pytest.fixture(autouse=True) def _clear_allowlist_cache(): get_public_allowlist.cache_clear(); yield; get_public_allowlist.cache_clear()`.
 19. `README.md`: update "Outbound instance policy" (adlist URLs now screened, best-effort)
     and the auth / rate-limit paragraphs (per-username lockout + residual targeted
-    lockout); add `PIHOLE_MANAGER_FANOUT_WORKERS` (default 8) near the other env vars and
+    lockout); add `FILTERHELM_FANOUT_WORKERS` (default 8) near the other env vars and
     note the four list endpoints query instances concurrently.
 20. Add the tests below; `./.venv/bin/pytest`. No `frontend/` change → no
     `npm run build`, `app/static/ui/` untouched.
@@ -422,7 +422,7 @@ already `PiHoleVersions | null` in `frontend/src/api.ts` (line 33). No `api.ts` 
 
 **New env vars:**
 
-- `PIHOLE_MANAGER_FANOUT_WORKERS` — int, default `8`, clamped `>= 1`. Upper bound on the
+- `FILTERHELM_FANOUT_WORKERS` — int, default `8`, clamped `>= 1`. Upper bound on the
   per-request thread pool for the four read-only list endpoints.
 
 **DB change:** `login_attempts` gains `username TEXT` (nullable). Additive; applied by a
@@ -552,6 +552,6 @@ tests), `app.url_policy.screen_adlist_url`, `app.url_policy._screen_addresses`
 - [ ] `git diff main...HEAD` is limited to the Files list (+ this plan).
 - [ ] No `frontend/` changes; `app/static/ui/` untouched.
 - [ ] `README.md` reflects per-username lockout, adlist screening, and
-      `PIHOLE_MANAGER_FANOUT_WORKERS`.
+      `FILTERHELM_FANOUT_WORKERS`.
 - [ ] Issues #1, #2, #4, #6, #7, #8, #9, #10, #12 are referenced by an inline comment at
       each fix site and closed on merge; #11 closed by 0001.

@@ -123,7 +123,7 @@ Rejected alternatives:
 
 ## Steps
 
-1. `app/auth.py`: add `POLL_HEADER = "x-pihole-manager-poll"` next to `SESSION_COOKIE`
+1. `app/auth.py`: add `POLL_HEADER = "x-filterhelm-poll"` next to `SESSION_COOKIE`
    (module-level constant, same style).
 2. `app/auth.py::AuthManager.session_user`: change the signature to `def
    session_user(self, token: str | None, now: int | None = None, *, refresh_last_seen:
@@ -150,7 +150,7 @@ Rejected alternatives:
    status: (options?: { background?: boolean }) =>
      request<{ instances: BlockingStatus[] }>(
        '/api/status',
-       options?.background ? { headers: { 'X-Pihole-Manager-Poll': '1' } } : undefined,
+       options?.background ? { headers: { 'X-FilterHelm-Poll': '1' } } : undefined,
      ),
    ```
 5. `frontend/src/pages/StatusPage.tsx`: change `load`'s signature to `const load =
@@ -170,7 +170,7 @@ Rejected alternatives:
 
 ## Contracts
 
-**New request header:** `X-Pihole-Manager-Poll: 1`, sent only by
+**New request header:** `X-FilterHelm-Poll: 1`, sent only by
 `StatusPage.tsx`'s recurring auto-refresh call. Read by `AuthenticationMiddleware`
 in local auth mode only; ignored (and harmless if sent) in proxy mode, since
 `proxy_user` never touches `last_seen`. Not part of the `/api` JSON contract — it's a
@@ -201,7 +201,7 @@ existing callers (`StatusPage.tsx`'s initial fetch and Refresh button) that call
     skip didn't quietly keep it alive).
   - `test_authentication_middleware_poll_header_skips_last_seen_refresh` — extend the
     `middleware_status` helper (or add a variant) to pass a `Cookie` header for a real
-    session token alongside `[("x-pihole-manager-poll", "1")]`; call it, then read
+    session token alongside `[("x-filterhelm-poll", "1")]`; call it, then read
     `manager`'s `sessions.last_seen` directly and assert it's unchanged from creation.
     A second call with the same cookie and no poll header updates `last_seen`.
   - `test_authentication_middleware_poll_header_does_not_resurrect_expired_session` —

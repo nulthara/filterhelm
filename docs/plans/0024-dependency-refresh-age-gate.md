@@ -245,7 +245,7 @@ touches the network.
 - [ ] `deploy.yml` and `docs/deploy.md` install with `--require-hashes` and without
       `--uploaded-prior-to`.
 - [ ] On the deploy host (user-run, before merge), this command succeeds:
-      `sudo -u gitea-runner /opt/pihole-manager/.venv/bin/pip install --dry-run --require-hashes -r <branch requirements.lock>`.
+      `sudo -u gitea-runner /opt/filterhelm/.venv/bin/pip install --dry-run --require-hashes -r <branch requirements.lock>`.
 - [ ] `AGENTS.md` has the "Dependency updates" section.
 - [ ] `./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8420` starts, and
       `/api/auth/status` answers 200.
