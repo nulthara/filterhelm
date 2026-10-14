@@ -1,6 +1,6 @@
 # 0033 — Rewrite history for the public identity
 
-Status: in-progress       <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped           <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0033-public-identity-rewrite
 Author: Claude (architect)
 Date: 2026-10-13
