@@ -12,7 +12,7 @@ healthy() {
     return 1
 }
 
-# Unprivileged LXCs lack /dev/net/tun, so build steps use host networking.
+# Hosts without /dev/net/tun cannot give build steps their own network, so builds use host networking.
 podman build --network=host --pull=missing --tag "$image:latest" /opt/filterhelm
 
 # Promote to last-known-good only after the new container answers.

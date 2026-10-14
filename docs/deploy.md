@@ -1,122 +1,104 @@
-# Deploy runbook — Gitea Actions to a self-hosted target
+# Deploy runbook
 
-**Design decision: the runner lives on the deploy host, the deploy target itself.**
-Not a separate CI host reaching over SSH — the job runs directly on the box
-being deployed to, so a deploy step is just `git reset --hard` + restart the
-service, in-place. No SSH keys to manage, no cross-host access to secure.
-The `.gitea/workflows/deploy.yml` workflow in this repo assumes exactly this.
+This runbook sets up continuous deployment with Gitea Actions. Every push to `main`
+rebuilds the FilterHelm container on the deploy host and restarts it. A failed health
+check rolls the deploy back automatically.
 
----
-
-## 0. What's still unknown
-
-- **The deploy host's IP address** — not yet confirmed to this session. Needed for
-  the reverse-proxy target, not for the workflow
-  itself (which runs locally on the box regardless of its IP).
-- **The deploy host's OS/Python version** — assumed Debian 13 (Trixie) with a
-  packaged Python ≥3.11. Confirm with
-  `cat /etc/debian_version && python3 --version` before trusting §3 below
-  verbatim.
-- ~~**act_runner's exact CLI flags**~~ — **verified 2026-08-30.** The
-  project renamed itself: `gitea.com/gitea/act_runner` is now
-  `gitea.com/gitea/runner`, and the binary is `gitea-runner`, not
-  `act_runner` — the original draft of this doc used the old name and its
-  download URL 404s. Confirmed by actually downloading and running
-  `gitea-runner v3.3.1 --help` / `register --help` / `daemon --help`; the
-  commands below match that binary's real output, not a guess.
+To run FilterHelm without CI, use the Compose setup in the [README](../README.md#run-in-a-container),
+or follow §3–§6 and run the redeploy script by hand.
 
 ---
 
-## 1. Confirm Gitea Actions is enabled server-side
+## How a deploy works
 
-On the Gitea host, check `app.ini`'s `[actions]` section:
+The Gitea Actions runner runs on the deploy host itself, not on a separate CI machine. A
+deploy is a local `git reset --hard` followed by a rebuild and restart, so no SSH keys or
+cross-host access are needed for the deploy steps.
+
+On each push to `main`, [.gitea/workflows/deploy.yml](../.gitea/workflows/deploy.yml):
+
+1. Fetches `main` into `/opt/filterhelm` and resets the checkout to it.
+2. Runs `sudo /usr/local/sbin/filterhelm-redeploy`, the runner's only sudo permission.
+3. Checks that `/api/auth/status` answers within about 20 seconds.
+
+The redeploy script:
+
+- Builds the image from `/opt/filterhelm` and tags it `localhost/filterhelm:latest`.
+- Restarts `filterhelm.service` and probes `/api/auth/status`.
+- Tags the image `:good` if the probe passes.
+- Restores `:good` and exits non-zero if the restart or probe fails.
+- Exits before restarting if the build fails, leaving the running container alone.
+
+## Requirements
+
+- A Gitea server with Actions available.
+- A Linux deploy host with systemd and Podman 4.4 or newer, for Quadlet support.
+- `git` and `curl` on the deploy host.
+
+Node.js and Python are not needed on the host. The compiled frontend is committed in
+`app/static/ui`, and Python runs inside the container.
+
+---
+
+## 1. Enable Gitea Actions
+
+Open the repository in Gitea's web UI. If it has an **Actions** tab, Actions is enabled and
+you can skip to §2.
+
+Otherwise, set `ENABLED = true` in the `[actions]` section of Gitea's `app.ini` and restart
+Gitea. To check the current value on the Gitea host:
 
 ```bash
 grep -A3 '^\[actions\]' /etc/gitea/conf/app.ini
 ```
 
-Needs `ENABLED = true`. If it's missing or false, add it and restart Gitea
-(`systemctl restart gitea` if it runs as a systemd unit — confirm with
-`systemctl status gitea` first; adjust if it's actually running in Docker).
+The path to `app.ini` varies by install.
 
-A quicker check that doesn't need a shell on the Gitea host at all: open the
-`filterhelm` repo on Gitea's web UI and look for an **Actions** tab. If
-it's not there, Actions is disabled server-wide and the config change above
-is the fix.
+## 2. Install and register the runner
 
-## 2. Register a runner scoped to this repo
+In the repository, open **Settings → Actions → Runners → Create new Runner**. Copy the
+registration token. Scope the runner to this repository rather than the whole Gitea
+instance, so a compromised or broken runner cannot touch other repositories.
 
-In the `filterhelm` repo: **Settings → Actions → Runners → Create new
-Runner**. This gives a registration token and confirms the instance URL to
-register against (probably `http://git.example.com:3000` or the LXC's
-direct address — either works for registration, but prefer whichever this
-network's other internal-to-internal traffic uses).
-
-Repo-scoped deliberately, not instance-wide — this runner does one thing
-(deploy this one app to this one box), and scoping it that narrowly means a
-compromised or malfunctioning runner can't touch anything else on Gitea.
-
-## 3. Install the runner on the deploy host
-
-**It's called `gitea-runner`, not `act_runner`** — the upstream project
-renamed itself (`gitea.com/gitea/act_runner` → `gitea.com/gitea/runner`)
-before this doc's first draft, which used the old name/URL and 404'd. The
-download below is the real one, confirmed working 2026-08-30 by actually
-fetching and running it:
+On the deploy host, download the runner. The binary is `gitea-runner`. Its older name was
+`act_runner`, and download URLs that use that name no longer work.
 
 ```bash
-# Confirm architecture first — use amd64 for an x86 target; a Pi needs
-# the matching ARM binary instead.
-uname -m
-
-# -f matters: without it, curl saves a 404 error page as if it were the
-# binary, which is exactly the failure this replaces — the file downloads
-# "successfully" with content-length 10 and the string "Not found" as its
-# entire contents, `chmod +x` doesn't care, and only `./the-binary` fails,
-# confusingly, as if the *shell* had a typo.
+uname -m   # use the amd64 build on x86_64 and the matching ARM build on ARM
 curl -fLo /usr/local/bin/gitea-runner \
   https://gitea.com/gitea/runner/releases/download/v3.3.1/gitea-runner-3.3.1-linux-amd64
 chmod +x /usr/local/bin/gitea-runner
 /usr/local/bin/gitea-runner --version   # expect: gitea-runner version v3.3.1
 ```
 
-Pinned to v3.3.1 deliberately (confirmed-working, not a moving "latest"
-path — there isn't one; that's what 404'd originally). Check
-`https://gitea.com/gitea/runner/releases` for anything newer before
-reusing this in six months.
+Keep `-f` on `curl`. Without it, a 404 saves an error page as the binary, and the failure
+only shows up later as a confusing exec error. Check the
+[runner releases](https://gitea.com/gitea/runner/releases) for a newer version.
 
-Create a dedicated, unprivileged system user for the runner rather than
-running it as root:
+Create an unprivileged system user for the runner:
 
 ```bash
 useradd --system --create-home --shell /usr/sbin/nologin gitea-runner
 ```
 
-(Same name as the binary — a Unix account and an executable can share a
-name without conflict; every command below is explicit about which is
-which.)
-
-Register it — non-interactively, with the token from §2. Passed via
-environment variable rather than `--token` on the command line, so it
-doesn't sit in shell history or `ps` output:
+Register the runner. Passing the token through an environment variable keeps it out of
+shell history and `ps` output. Replace `https://gitea.example.com` with your Gitea URL.
 
 ```bash
 sudo -u gitea-runner \
-  GITEA_RUNNER_REGISTRATION_TOKEN=<TOKEN_FROM_STEP_2> \
+  GITEA_RUNNER_REGISTRATION_TOKEN=<token> \
   /usr/local/bin/gitea-runner register \
   --no-interactive \
-  --instance http://git.example.com:3000 \
+  --instance https://gitea.example.com \
   --name filterhelm-runner \
   --labels filterhelm-deploy:host
 ```
 
-`:host` is the part that matters: it tells the runner to execute job steps
-directly on this OS, not inside a Docker container. Deliberate — the deploy host is
-an LXC, nested Docker-in-LXC is its own can of worms, and this deploy is
-just shell commands anyway. The label `filterhelm-deploy` must match
-`runs-on:` in `.gitea/workflows/deploy.yml` exactly.
+- `filterhelm-deploy` must match `runs-on:` in the workflow exactly.
+- `:host` makes job steps run directly on the host, not inside a container. The deploy
+  steps are plain shell commands, so they need no container.
 
-Run it as a systemd service so it survives reboots:
+Run the runner as a systemd service:
 
 ```bash
 sudo tee /etc/systemd/system/gitea-runner.service >/dev/null <<'EOF'
@@ -139,28 +121,18 @@ sudo systemctl enable --now gitea-runner.service
 systemctl status gitea-runner.service --no-pager
 ```
 
-Confirm it shows up: repo **Settings → Actions → Runners** should list
-`filterhelm-runner` as online/idle.
+**Settings → Actions → Runners** should now list `filterhelm-runner` as idle.
 
-## 4. Prepare the host
+## 3. Clone the repository
 
-Production uses rootful Podman in the deploy LXC. On the hypervisor, enable
-nesting and restart the container:
+Install Podman and confirm it works:
 
 ```bash
-pct set <vmid> --features nesting=1
-pct reboot <vmid>
-```
-
-On the deploy host, install Podman and confirm the runtime works:
-
-```bash
-sudo apt install podman
+sudo apt install podman   # or your distribution's equivalent
 sudo podman info
 ```
 
-One-time, by hand — the workflow only ever updates this in place afterward,
-it doesn't create it. Create a read-only SSH deploy key for the runner first:
+Create a read-only SSH deploy key for the runner:
 
 ```bash
 sudo -u gitea-runner mkdir -p /home/gitea-runner/.ssh
@@ -173,78 +145,76 @@ sudo -u gitea-runner ssh-keygen \
 sudo cat /home/gitea-runner/.ssh/id_ed25519.pub
 ```
 
-Add the printed public key in Gitea under **filterhelm → Settings →
-Deploy Keys**, with write access disabled. Gitea's SSH service is on the
-non-standard port `2222`, so record that exact endpoint in `known_hosts`:
+Add the printed public key under the repository's **Settings → Deploy Keys**, with write
+access turned off.
+
+Record Gitea's SSH host key. Replace `<port>` with Gitea's SSH port, which is 22 unless
+your server changes it:
 
 ```bash
-sudo -u gitea-runner ssh-keyscan -p 2222 -H git.example.com \
+sudo -u gitea-runner ssh-keyscan -p <port> -H gitea.example.com \
   | sudo -u gitea-runner tee /home/gitea-runner/.ssh/known_hosts >/dev/null
 sudo -u gitea-runner chmod 600 /home/gitea-runner/.ssh/known_hosts
 ```
 
-Then clone using `ssh://` syntax; the scp-style `git@host:path` form cannot
-express a custom SSH port:
+Clone into `/opt/filterhelm`. Use the `ssh://` form, because the shorter `git@host:path`
+form cannot specify a port:
 
 ```bash
 sudo mkdir -p /opt/filterhelm
 sudo chown gitea-runner:gitea-runner /opt/filterhelm
-sudo -u gitea-runner git clone ssh://git@git.example.com:2222/example/filterhelm.git /opt/filterhelm
+sudo -u gitea-runner git clone \
+  ssh://git@gitea.example.com:<port>/<owner>/filterhelm.git /opt/filterhelm
 ```
 
-If the checkout already exists with the old HTTP origin, repair it in place:
+The workflow only updates this checkout. It never creates it.
 
-```bash
-sudo -u gitea-runner git -C /opt/filterhelm remote set-url \
-  origin ssh://git@git.example.com:2222/example/filterhelm.git
-sudo -u gitea-runner git -C /opt/filterhelm fetch origin main
-```
+## 4. Install the container units
 
-The React/Ant Design production bundle is committed in `app/static/ui`.
-Node.js is intentionally not required on the deploy host; frontend builds happen on a
-development machine and the generated assets deploy with the repository.
-
-## 5. Install the container units
-
-Install the environment file, data directory, Quadlet, and redeploy script by hand:
+Install the environment file, data directory, Quadlet, and redeploy script:
 
 ```bash
 sudo install -d -m 0700 /etc/filterhelm
-sudo install -m 0600 /dev/null /etc/filterhelm/env   # then edit; see below
+sudo install -m 0600 /dev/null /etc/filterhelm/env
 sudo install -d -o 10001 -g 10001 -m 0700 /var/lib/filterhelm
 sudo install -o root -g root -m 0644 /opt/filterhelm/deploy/filterhelm.container /etc/containers/systemd/
 sudo install -o root -g root -m 0755 /opt/filterhelm/deploy/filterhelm-redeploy /usr/local/sbin/
 sudo systemctl daemon-reload
 ```
 
-Edit `/etc/filterhelm/env` as root. Use `KEY=value` lines, without the
-systemd unit's `Environment=` prefix:
+Edit `/etc/filterhelm/env` as root. Use plain `KEY=value` lines, without systemd's
+`Environment=` prefix:
 
 ```ini
 FILTERHELM_AUTH_MODE=local
 FILTERHELM_COOKIE_SECURE=true
-# Replace manager.example with the public hostname presented by the proxy.
+# Replace manager.example with the hostname your reverse proxy serves.
 FILTERHELM_TRUSTED_HOSTS=manager.example,127.0.0.1
-# Optional: exact public hostname, IP, and CIDR entries (private LANs need no entry)
+# Optional. Only needed for Pi-hole instances on public addresses.
 # FILTERHELM_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
 ```
 
-Do not set `FILTERHELM_DATA` in the environment file: the Quadlet pins it
-to `/data`, taking precedence over the environment file.
+Do not set `FILTERHELM_DATA` here. The Quadlet sets it to `/data`, and the Quadlet value
+wins.
 
-The environment file is root-owned, mode `0600`. The host data directory is
-owned by `10001:10001`, mode `0700`, and mounted at `/data` in the container.
-Production uses host networking, preserving real client addresses for proxy
-trust, audit logs, and pre-authentication rate limits.
+| Item | Owner | Mode | Notes |
+| --- | --- | --- | --- |
+| `/etc/filterhelm/env` | root | `0600` | Environment for the container |
+| `/var/lib/filterhelm` | `10001:10001` | `0700` | Mounted at `/data` in the container |
+| `/etc/containers/systemd/filterhelm.container` | root | `0644` | Quadlet unit |
+| `/usr/local/sbin/filterhelm-redeploy` | root | `0755` | Build, restart, and rollback script |
 
-The installed script and Quadlet are root-owned. Edits to `deploy/` in git take
-effect only after this installation step is re-run by an administrator. When
-reinstalling them, preserve the existing environment file rather than replacing
-it with the empty template.
+The container uses host networking, so FilterHelm sees real client addresses. Proxy trust,
+the audit log, and pre-sign-in rate limits all depend on them.
 
-## 6. The one sudoers rule
+The installed Quadlet and script are copies. Changes to `deploy/` in git take effect only
+after an administrator re-runs the two `install` lines for them. Do not re-run the
+`/etc/filterhelm/env` line, because it replaces the file with an empty one.
 
-The runner owns the checkout but receives only this passwordless sudo command:
+## 5. Allow the redeploy command
+
+The runner owns the checkout but gets exactly one passwordless sudo command. Create the
+rule:
 
 ```bash
 sudo visudo -f /etc/sudoers.d/gitea-runner-filterhelm
@@ -254,15 +224,11 @@ sudo visudo -f /etc/sudoers.d/gitea-runner-filterhelm
 gitea-runner ALL=(root) NOPASSWD: /usr/local/sbin/filterhelm-redeploy
 ```
 
-The workflow calls the script without arguments. The script builds the image
-from `/opt/filterhelm`, restarts `filterhelm.service`, and probes
-`/api/auth/status`. A passing probe promotes the image to `:good`; a failed
-restart or probe rolls back to `:good` when it exists and fails the deploy.
-A failed build exits before restart, leaving the running container alone. The
-runner is not in a container-runtime group: runtime access would be root-equivalent. It cannot
-rewrite the installed root-owned script or Quadlet through a pushed repo edit.
+The workflow calls the script with no arguments. The runner is not in any container-runtime
+group, because access to the container runtime is equivalent to root. A pushed commit
+cannot change the installed root-owned script or Quadlet.
 
-## 7. First start
+## 6. First start
 
 ```bash
 sudo /usr/local/sbin/filterhelm-redeploy
@@ -270,37 +236,48 @@ sudo podman exec -it filterhelm python -m app.auth set-password --username admin
 curl -fsS http://127.0.0.1:8420/api/auth/status
 ```
 
-A Quadlet unit is not `systemctl enable`d. Its `[Install]` section is applied by
-the generator, producing `filterhelm.service` for boot and normal service
-management. Podman auto-update is not enabled; deployments are initiated by
-pushes to `main`.
+Quadlet units are not enabled with `systemctl enable`. The Quadlet generator reads the
+unit's `[Install]` section and creates `filterhelm.service`, which starts at boot and
+works with normal `systemctl` commands. Podman auto-update is off, so only pushes to `main`
+start a deploy.
+
+## 7. First deploy
+
+Push a commit to `main` and watch the repository's **Actions** tab. Expect three green
+steps:
+
+1. Pull latest main
+2. Build image and restart
+3. Confirm it came back up
+
+If the last step fails, the service did not answer within about 20 seconds. Check the
+service log before suspecting the workflow:
+
+```bash
+journalctl -u filterhelm -n 50 --no-pager
+```
+
+Then confirm FilterHelm answers from another machine on the network, not only from the
+host itself:
+
+```bash
+curl -sI http://<deploy-host>:8420/app/ | head -1
+```
+
+Put a TLS-terminating reverse proxy in front before regular use, because session cookies
+require HTTPS. See the README's [Security](../README.md#security) section.
 
 ## 8. Rollback
 
-A failed restart or probe automatically restores `:good` when it exists, and
-the deploy run fails. Failed deploys and retries never overwrite `:good`.
+A failed restart or probe restores `:good` automatically, if it exists, and the deploy run
+fails. Failed deploys and retries never overwrite `:good`.
 
-To restore the last good image manually:
+To restore the last good image by hand:
 
 ```bash
 sudo podman tag localhost/filterhelm:good localhost/filterhelm:latest
 sudo systemctl restart filterhelm.service
 ```
 
-Only a passing probe promotes an image to `:good`. For an image that passes
-the probe but misbehaves, revert the commit on `main` and push.
-
-## 9. First deploy
-
-Push any commit to `main` (or re-push the current HEAD) and watch the
-**Actions** tab on the `filterhelm` repo. Expect three green steps: pull,
-build and restart, confirm-up. If "Confirm it came back up" fails, the
-service didn't come back within ~20s — check
-`journalctl -u filterhelm -n 50 --no-pager` before assuming the workflow
-itself is wrong.
-
-Once green, confirm from the LAN (not just `127.0.0.1` on the box itself):
-
-```bash
-curl -sI http://192.0.2.20:8420/app/ | head -1
-```
+An image becomes `:good` only after passing the probe. If a deployed image passes the
+probe but misbehaves, revert the commit on `main` and push.

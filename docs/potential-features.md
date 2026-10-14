@@ -108,12 +108,11 @@ Nothing is outstanding in this section.
 
 ## 4. Larger, already-flagged items (tracked elsewhere — listed for completeness)
 
-- **OPNsense-managed local DNS** — design.md §13. Long-term; open question
+- **OPNsense-managed local DNS** — design.md §10. Long-term; open question
   there is whether it's a third "instance" type reusing this app's
   diff/confirm/audit machinery, or a separate integration entirely.
 - **Read-only external API key** for a Grafana/Kuma-style dashboard to
-  pull status without a full login (design.md §12 mentions this in
-  passing). Would need its own scoped, read-only credential type distinct
+  pull status without a full login. Would need its own scoped, read-only credential type distinct
   from the session-based local/proxy auth this app has now.
 
 ## 5. Lower-priority / needs more thought

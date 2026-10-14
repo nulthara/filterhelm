@@ -1,539 +1,468 @@
-# FilterHelm — design, requirements & layout
+# FilterHelm — design and requirements
 
-**Moved here 2026-08-30** from a private infrastructure repo, where it was drafted — a
-standalone app is better off self-documenting in its own repo than relying
-on a companion doc (and a chat transcript) living somewhere else. A short
-pointer stub was left at the old location in that repo instead of a dead link.
-
-*A note on cross-references below:* double-bracket wiki links and `.md` names
-in this document refer to internal notes kept outside this repo.
-
-A local GUI application for managing both piholes, requested directly rather
-than growing out of internal notes. Related but not redundant — see §9
-for how the two fit together.
+This document records what FilterHelm does, the safety rules it follows, and why. The
+[README](../README.md) covers setup and security configuration. The
+[deploy runbook](deploy.md) covers hosting.
 
 ---
 
 ## 1. Context
 
-Two resolvers today:
+Many home and small-office networks run two or more Pi-hole instances so DNS keeps working
+when one goes down. Those instances need the same local DNS records, block lists, and
+allow/deny overrides.
 
-| Name | Address | Host |
-|---|---|---|
-| pihole1 | 192.168.1.2 | Docker container on a macvlan network |
-| pihole2 | 192.168.1.3 | Container on a separate host, normal Debian |
+Existing sync tools copy configuration from one instance to the others on a schedule. In
+practice that can damage the gravity database and restart FTL, which takes a resolver down
+for several minutes. Because every instance runs the same job at the same time, one bad
+run can take DNS down for the whole network at once.
 
-Keeping them consistent (adlists, local DNS records, allow/deny) has already
-cost one failed attempt: **nebula-sync was tried and rejected** — it caused
-gravity DB damage and FTL restarts, which take a resolver down for 5–10
-minutes. Because it ran both instances on the same schedule, a bad run
-degraded DNS for the whole house at once. That failure shapes almost every
-constraint below.
+That failure mode shapes almost every rule in this document. FilterHelm is built for
+looking at instances day to day and making occasional, deliberate changes by hand. It is
+not a scheduled sync.
 
-Internal notes describe a CLI/automation answer to the same problem
-(nothing built yet). This document is a second, GUI-shaped answer — for
-day-to-day looking and occasional hand-driven changes, not scheduled
-automation. Both share the same underlying integration point: the **Pi-hole
-v6 REST API**, confirmed as the right surface in that design (it sidesteps
-pihole1 not being an SSH host, and is what nebula-sync itself used).
+FilterHelm talks to each instance only through the Pi-hole v6 REST API. It needs no SSH
+access and works the same for containerized and bare-metal installs.
 
 ---
 
 ## 2. Goals
 
-1. **See local DNS entries across both piholes and flag inconsistencies** —
-   same hostname pointing at different IPs, an entry present on one resolver
-   and missing on the other, orphaned or unreachable targets.
-2. **Support adding multiple Pi-hole instances**, not hardcoded to two —
-   name, URL, credential, with a way to confirm the connection works.
-3. **Manage adlists** — view, add, remove, enable/disable, and trigger a
-   gravity update, per instance or across instances at once.
-4. **Manage settings** — view and edit a defined subset of each instance's
-   configuration through the same GUI, rather than the web UI per host.
+1. **Compare local DNS across instances.** Flag a hostname that points at different
+   addresses on different instances, or that exists on some instances but not others.
+2. **Manage any number of instances.** Each has a name, URL, and credential, and a way to
+   confirm the connection works.
+3. **Manage block lists.** View, add, remove, enable, and disable them, and update gravity,
+   on one instance or several.
+4. **Manage a small set of settings.** View and edit them per instance without opening each
+   instance's web UI.
 
-## 3. Non-goals (for v1)
+## 3. Non-goals
 
-- Not a replacement for either pihole's own web UI — this is a
-  cross-instance comparison and bulk-editing tool, not a full admin console.
-- Not a daemon and not scheduled. It runs when Kyrnveil opens it and stops
-  doing anything the moment it's closed. (An optional read-only scheduled
-  drift check is the internal notes' `--check --diff` idea, not this app's
-  job — see §9.)
-- Not multi-user, not exposed off the local machine. Single operator, local
-  network only.
-- DHCP-side records (OPNsense) are out of scope — reads Pi-hole's own local
-  DNS only. Whether Pi-hole local records should even overlap with
-  DHCP-issued ones is the same open question internal notes flagged and
-  is still unresolved.
+- **Replacing Pi-hole's web UI.** FilterHelm compares and edits across instances. It is not
+  a full admin console.
+- **Background work.** FilterHelm has no daemon, scheduler, or timer. It acts only when
+  someone uses it.
+- **Public exposure.** It is meant for a private network, used by one operator or a small
+  trusted group.
+- **DHCP or router DNS.** FilterHelm reads and writes Pi-hole's own local DNS only.
 
 ---
 
-## 4. Constraints carried over from the nebula-sync failure
+## 4. Safety rules
 
-These aren't optional hardening — they're the reason this project is worth
-building carefully rather than reaching for another off-the-shelf syncer:
+These rules are the reason the project exists. Every feature follows them.
 
-- **One instance mutated at a time, always.** Never a fan-out write to all
-  configured piholes in a single operation. A "apply to all" action is
-  sequential with per-instance results shown, not a single atomic broadcast.
-- **Gravity runs only when adlists actually changed on that instance**, and
-  only as an explicit, visible action — never implicit, never on a timer.
-- **Diff before write, every time.** Any mutating action shows what will
-  change and requires confirmation. Read-only comparison is the default
-  mode of the app, not a special flag.
-- **No wholesale replace.** Sync operations add/remove the specific
-  differing entries, never delete-and-recreate a list or record set.
-- **v6 REST API only**, session-based auth (app password), always releasing
-  the session (`DELETE /api/auth`) when done or on error.
+- **One instance at a time.** No operation writes to every instance at once. An
+  "apply to several" action runs on each instance in turn and reports each result.
+- **Gravity runs only on request.** An instance's gravity runs only when its block lists
+  changed, and only through an explicit, visible action. Nothing triggers it implicitly or
+  on a timer.
+- **Diff before write.** Every change shows exactly what will change and asks for
+  confirmation. Read-only comparison is the default mode.
+- **No wholesale replace.** Changes add or remove the specific entries that differ. They
+  never delete and recreate a whole list or record set.
+- **v6 REST API only.** Each operation opens one session with the instance's app password
+  and always closes it (`DELETE /api/auth`), including on error.
 
 ---
 
 ## 5. Functional requirements
 
 ### 5.1 Instance management
-- Add an instance: display name, base URL, app password (or API token,
-  whichever v6 exposes) — stored via credential storage in §7.3, never in
-  plain config.
-- Test-connection action before saving, using the same auth call the app
-  will use at runtime — surface a clear pass/fail rather than a generic
-  network error.
-- Edit and remove instances. Removing an instance only forgets it locally;
-  it never touches the pihole itself.
-- Per-instance live status: reachable / auth failed / unreachable, shown
-  wherever instances are listed (not just on an instances screen).
-- The Instances Health column reads host and FTL uptime, memory, swap, load, CPU,
-  temperature, FTL process usage, and query-database size from
-  `/api/info/{system,ftl,database,sensors}` inside the connection-check session,
-  on open, Refresh, and after Test, save, and remove via the existing list reload.
-  FTL uptime is converted from milliseconds to seconds. A failed health read leaves
-  the instance reachable with Health marked unavailable; sensors are optional.
-  The row shows a status dot (healthy / warning / critical / unavailable) computed
-  server-side from temperature against Pi-hole's `hot_limit`, RAM percent, swap
-  percent, and 1-minute load per core with fixed thresholds. The numbers sit in a
-  collapsible detail row under each instance. A warning or critical instance opens
-  its detail row automatically; a healthy one starts collapsed. Expanding or
-  collapsing a row overrides that default for the rest of the session.
-- Each Instances row has a Backup action. It fetches `GET /api/teleporter` through
-  the backend in one session and downloads the zip as `pihole-<name>-<UTC timestamp>.zip`.
-  The archive passes through memory only, capped at 64 MiB. Before delivery the backend
-  verifies every member's CRC and confirms that `pihole.toml` and `gravity.db` are present
-  and that `pihole.toml` parses, so a damaged or incomplete archive returns 502.
-  Each download is audited as `backup_download` with size and SHA-256, and fails with
-  503 if the audit line cannot be written. Restore is not offered.
-- Each Instances row has a Service menu with Restart DNS, Flush logs, and Flush
-  network table. After confirmation, each action calls one `POST /api/action/*`
-  endpoint on that instance and is audited as `ftl_<action>`, with status
-  `unconfirmed` when the transport fails after the request was sent, when Pi-hole
-  answers 5xx, or when a 200 reply is unreadable. A 5xx can mean a partial run,
-  for example a flush that cleared the log but not the database. A 403 means
-  the instance has `webserver.api.allow_destructive` off. Flush logs deletes the
-  last 24 hours of query history.
-- A dedicated status view shows the current blocking state and remaining
-  pause timer. Blocking can be paused for 10 seconds, 30 seconds, 5 minutes,
-  or indefinitely and resumed for one instance or a selected group. Group
-  mutations remain sequential and surface partial failures.
 
-### 5.2 Local DNS records + inconsistency detection
-- Multi-select A/AAAA and CNAME records to remove them with a single confirm, applied sequentially
-  one instance at a time.
-- Pull local A/CNAME records from every configured instance.
-- CNAMEs (`dns.cnameRecords`) share the Local DNS screen as a second tab, with the same
-  missing/conflict states. One alias per entry, so unlike `dns.hosts` a delete never has
-  to rewrite a surviving line.
-- Present a unified, per-hostname view across all instances, not a separate
-  table per pihole — that's what makes inconsistencies visible at a glance
-  rather than requiring a mental diff.
-- Flag, distinctly:
-  - **Conflicting IP** — same hostname, different target IP on two or more
-    instances.
-  - **Missing** — hostname exists on N-1 instances but not this one.
-  - **Orphaned target** *(best-effort)* — record points at an IP that
-    doesn't answer/ping, informational only, never blocks anything.
-- Per-inconsistency actions: copy a record from instance A onto instance B
-  (single-record write, diffed and confirmed per §4), or mark the divergence
-  as intentional/ignored so it stops flagging.
-- Manual add/edit/delete of a local record, against one selected instance.
+**Instances**
 
-### 5.3 Adlist management
-- Multi-select adlists to enable, disable, or remove them with a single confirm, applied
-  sequentially one instance at a time.
-- Per instance: list configured adlists, each with its enabled/disabled
-  state and last-update status (Pi-hole's own list metadata).
-- Cross-instance view mirroring §5.2's shape: which adlists exist on which
-  instances, so a missing list is as visible as a missing DNS record.
-- Add / remove / enable / disable an adlist on a selected instance (or
-  apply the same change across instances, sequentially per §4).
-- **Update gravity** as its own explicit button, enabled only when that
-  instance has a pending adlist change — never triggered as a side effect
-  of any other action.
-- An adlist can be assigned to one or more groups per instance via 'Edit groups'
-  (§5.6); changing group membership marks that instance's gravity pending, same as
-  any other adlist edit.
+- Add an instance with a display name, base URL, and app password. The password goes to
+  credential storage (§7.3), never to a plain config file.
+- Test the connection before saving, using the same auth call the app uses at runtime.
+  Report a clear pass or fail, not a generic network error.
+- Edit and remove instances. Removing an instance only forgets it locally. It never touches
+  the Pi-hole itself.
+- Show each instance's live status (reachable, auth failed, or unreachable) wherever
+  instances are listed.
 
-### 5.4 Settings management
-- Scope this to a defined, deliberately small subset of the v6 settings API
-  to start — candidates: upstream DNS servers, conditional forwarding,
-  query logging on/off, privacy level. Expand later; don't try to mirror
-  the entire Pi-hole settings surface in v1.
-- Settings are viewed and edited **per instance** — nothing here assumes
-  they should match across resolvers. Pi-hole2's Unbound-recursive wishlist
-  item (internal notes) is a good example of a setting that's legitimately
+**Health**
+
+- The Health column reads `/api/info/{system,ftl,database,sensors}` in the same session as
+  the connection check. It loads on open, on Refresh, and after Test, save, or remove.
+- It shows host and FTL uptime, memory, swap, load, CPU, temperature, FTL process usage,
+  and query database size. FTL uptime is converted from milliseconds to seconds.
+- The server computes a status dot (healthy, warning, critical, or unavailable) from
+  temperature against Pi-hole's `hot_limit`, RAM percent, swap percent, and 1-minute load
+  per core.
+- A failed health read leaves the instance reachable and marks Health unavailable. Sensors
+  are optional.
+- Details sit in a collapsible row under each instance. Warning and critical rows open
+  automatically and healthy rows start collapsed. A manual expand or collapse sticks for the
+  rest of the session.
+
+**Backup**
+
+- The Backup action fetches `GET /api/teleporter` through the backend in one session. The
+  browser downloads it as `pihole-<name>-<UTC timestamp>.zip`.
+- The archive stays in memory, capped at 64 MiB.
+- Before sending it on, the backend checks every member's CRC, confirms `pihole.toml` and
+  `gravity.db` are present, and confirms `pihole.toml` parses. A damaged or incomplete
+  archive returns 502.
+- Each download is audited as `backup_download` with its size and SHA-256. If the audit
+  line cannot be written, the download fails with 503.
+- Restore is not offered.
+
+**Service actions**
+
+- The Service menu offers Restart DNS, Flush logs, and Flush network table. Each calls one
+  `POST /api/action/*` endpoint after confirmation and is audited as `ftl_<action>`.
+- The audit status is `unconfirmed` when the request was sent but the transport failed,
+  Pi-hole answered 5xx, or a 200 reply could not be read. A 5xx can mean a partial run,
+  such as a flush that cleared the log but not the database.
+- A 403 means the instance has `webserver.api.allow_destructive` turned off.
+- Flush logs deletes the last 24 hours of query history.
+
+**Blocking status**
+
+- The Status page shows each instance's blocking state and any remaining pause time.
+- Blocking can be paused for 10 seconds, 30 seconds, 5 minutes, or indefinitely, and
+  resumed at any time, on one instance or a selected group.
+- Group changes run one instance at a time and report partial failures.
+
+### 5.2 Local DNS records
+
+- Read local A/AAAA records (`dns.hosts`) and CNAME records (`dns.cnameRecords`) from every
+  instance. CNAMEs have their own tab on the Local DNS page.
+- Show one row per hostname across all instances, not one table per instance, so
+  differences are visible at a glance.
+- Flag two kinds of difference:
+  - **Conflict.** The same hostname has different targets on different instances.
+  - **Missing.** The hostname exists on some instances but not this one.
+- Copy a record from one instance to another as a single, confirmed write.
+- Add, edit, and delete records on one selected instance.
+- Select several records and remove them with one confirmation. Removal runs one instance
+  at a time.
+- Writes use item-level `dns.hosts` operations, so each change touches one record. Each
+  CNAME entry holds one alias, so a CNAME delete never rewrites a surviving line.
+- Filter the table by hostname, address, or instance name. Filtering never changes the
+  conflict or missing flags.
+
+### 5.3 Block lists
+
+- Show every subscribed list in one table, with which instances have it, its enabled state,
+  and Pi-hole's own update metadata. A missing list is as visible as a missing DNS record.
+- Add, remove, enable, or disable a list on one instance, or apply the same change to
+  several instances in turn.
+- Select several lists and enable, disable, or remove them with one confirmation.
+- Assign a list to groups per instance with Edit groups (§5.6).
+- Any list change, including a group change, marks that instance's gravity as pending.
+- **Update gravity** is a separate button, enabled only while the instance has pending
+  changes. No other action triggers it. A failed update leaves the instance pending.
+
+### 5.4 Settings
+
+- Manage a deliberately small set of settings:
+  - upstream DNS servers (`dns.upstreams`)
+  - query logging (`dns.queryLogging`)
+  - privacy level (`misc.privacylevel`)
+  - conditional forwarding (`dns.revServers`)
+- View and edit settings one instance at a time. Nothing assumes settings should match
+  across instances, because some, such as upstream resolvers, are legitimately
   host-specific.
-- Same diff-before-write rule as everything else.
+- Every change shows a diff before it is applied.
 
-### 5.5 Domain allow/deny management
-- Multi-select domain overrides to enable, disable, or remove them with a single confirm,
-  applied sequentially one instance at a time.
-- Per instance: list individual allow/deny domain entries (exact hostname or
-  regex), each with its enabled/disabled state — distinct from subscribed adlists
-  (§5.3).
-- Cross-instance view mirroring §5.2/§5.3's shape: which domain overrides exist on
-  which instances.
-- Add / remove / enable / disable a domain override on a selected instance (or
-  apply the same addition across instances, sequentially per §4).
-- No gravity step — domain overrides take effect without a gravity run, unlike
-  adlists (§5.3), confirmed against a live instance before this feature merged.
-- A domain override can be assigned to groups per instance via 'Edit groups' (§5.6);
-  confirmed against a live instance before merge that this does not require a gravity
-  run (see plan 0007's Acceptance criteria).
+### 5.5 Domain allow/deny overrides
 
-### 5.6 Group management
-- Cross-instance list of groups, including missing and enabled-state conflict status.
-- Add a group to one or more selected instances sequentially; enable, disable, or
-  delete a group on one selected instance at a time.
-- Deleting a group previews the block lists and domains scoped solely to it and offers
-  to leave them unassigned, delete them, or reassign them to Default. The orphan set is
-  recomputed server-side at write time; orphan handling runs first, and any failure leaves
-  the group intact with per-entry results. A cascade changing an adlist marks gravity
-  pending for that instance. Deleting Default (id 0) requires explicit risk acknowledgment
-  and cannot use reassign.
-- Group changes themselves do not trigger gravity, pending live verification before merge that
-  enabled-state changes take effect without a gravity run.
+- List individual allow and deny entries (exact or regex) with their enabled state. These
+  are separate from subscribed block lists (§5.3).
+- Show which overrides exist on which instances, in the same shape as §5.2 and §5.3.
+- Add, remove, enable, or disable an override on one instance, or add the same override to
+  several instances in turn.
+- Select several overrides and enable, disable, or remove them with one confirmation.
+- Assign an override to groups per instance with Edit groups (§5.6).
+- Override changes, including group changes, take effect without a gravity run. This was
+  confirmed against a live instance.
 
-### 5.7 Client management
-- Cross-instance list of configured clients, with add and delete actions and a
+### 5.6 Groups
+
+- Show every group across instances, flagging groups that are missing or whose enabled
+  state differs.
+- Add a group to one or more instances in turn. Enable, disable, or delete a group on one
+  instance at a time.
+- Deleting a group first previews the block lists and domains assigned only to that group.
+  The operator chooses to leave them unassigned, delete them, or move them to Default.
+- The server recomputes that set at write time and handles those entries before deleting
+  the group. If any step fails, the group stays and the page shows per-entry results.
+- If handling those entries changes a block list, that instance's gravity becomes pending.
+- Deleting the Default group (id 0) requires an explicit risk acknowledgment and cannot
+  move entries to Default.
+- Group changes themselves do not trigger gravity.
+
+### 5.7 Clients
+
+- Show every configured client across instances, with add and delete actions and a
   per-instance editor for group membership.
-- Group membership is resolved to names in the browser from the groups endpoint;
-  group IDs are instance-local and are never compared across Pi-hole instances.
-- Client membership changes do not trigger gravity, pending the same live
-  no-gravity verification required for group management.
-
+- The browser resolves group IDs to names per instance. Group IDs are local to each
+  instance and are never compared across instances.
+- Client changes do not trigger gravity.
 
 ### 5.8 Domain lookup
-- Read-only Lookup page searches Pi-hole's `/api/search` on every instance, with one
-  fan-out per user-triggered search. No mount-time search, timer, caching, or writes.
-- Exact searches derive a verdict from enabled matches in FTL precedence order:
-  exact allow → gravity allow (antigravity) → exact deny → regex allow → gravity
-  block → regex deny. No enabled match means "Not listed". Disabled matches are
-  displayed but never decide the verdict.
-- Partial matching searches for substring hits and gives counts instead of a verdict.
-  Exact searches cap each result array at 1000 entries; partial searches cap each at
-  100. A truncated exact search also withholds its verdict and shows a warning.
-  Truncation messages report the actual displayed row count against the total.
-- Results show matching entries, list addresses, enabled state, comments, and
-  instance-local group names. Verdicts consider every enabled entry; entries scoped
-  to specific groups may not apply to every client. Per-client and CNAME-chain
-  evaluation are outside this feature's scope.
+
+- The Lookup page calls Pi-hole's `/api/search` on every instance, once per search the
+  operator submits. It never searches on page load, on a timer, or from cache, and never
+  writes.
+- An exact search derives a verdict from enabled matches in FTL's precedence order:
+  1. exact allow
+  2. gravity allow (antigravity)
+  3. exact deny
+  4. regex allow
+  5. gravity block
+  6. regex deny
+- No enabled match means "Not listed". Disabled matches are shown but never decide the
+  verdict.
+- A partial search finds substring matches and shows counts, not a verdict.
+- Exact searches cap each result list at 1000 entries and partial searches at 100. A
+  truncated exact search withholds its verdict and shows a warning with the shown and total
+  counts.
+- Results show matching entries, list addresses, enabled state, comments, and group names.
+  Entries scoped to specific groups may not apply to every client.
+- Per-client evaluation and CNAME-chain evaluation are out of scope.
 
 ### 5.9 Query log and statistics
 
-- Read-only Queries page makes one fan-out on open and on Apply or Refresh.
-  There is no timer, paging across instances, audit entry, or mutation. Each instance
-  uses one session, reading the summary, permitted and blocked top domains, permitted
-  and blocked top clients, upstreams, then the query log sequentially. Instances fan
-  out concurrently; a failed read makes that instance unavailable for the response.
-- The log merges rows newest-first across instances. Its window is bounded to
-  60–86400 seconds (default 3600), and its per-instance limit to 1–500 (default 100).
-  Matching counts and the start of in-memory history explain truncated results;
-  narrow the window or filters to see the rest. No on-disk history is read.
-- Status may be one FTL status or "Blocked (any reason)". Blocked follows FTL's
-  twelve-status `is_blocked()` set, including `DBBUSY`. FTL accepts one status per
-  request, so the server reads each blocked status, sums matching counts, merges
-  newest-first, and caps the result again at the per-instance limit.
-- Domain and client filters accept FTL wildcards; whitespace and slashes are rejected.
-  Domains are lowercased. A client pattern containing only hex digits, `.`, `:`, and
-  `*`, with at least one dot or colon, goes to `client_ip`; other nonempty patterns
-  go to `client_name`. Only one is sent. Hex-only hostnames such as `cafe.dead`
-  consequently classify as IP patterns.
-- Statistics always cover FTL's last 24 hours, independent of log filters and window.
-  Summary cards show per-instance counters and combined totals for reporting instances.
-  Permitted and blocked top domains and clients are fixed at ten per instance; there
-  is no combined ranking because truncated lists cannot be summed accurately.
-- Upstreams retain the `cache` and `blocklist` pseudo-entries (`port: -1`), displayed
-  without an address or response time. Real upstream response statistics are displayed
-  in milliseconds. Switching among the four tabs makes no further request.
+**Loading**
 
-### 5.10 Drift dashboard
+- The Queries page is read-only. It loads on open and on Apply or Refresh, with no timer,
+  no cross-instance paging, and no audit entry.
+- Each instance uses one session and reads, in order: summary, permitted and blocked top
+  domains, permitted and blocked top clients, upstreams, and the query log.
+- Instances are queried in parallel. A failed read marks that instance unavailable.
 
-The read-only Drift screen aggregates Local DNS A/AAAA, CNAME records, block-list
-definitions, domains, groups, clients, and the four managed settings in one
-`GET /api/drift` request. Each instance uses one session with five sequential
-reads; DNS, CNAMEs, and settings share a single config-tree fetch.
+**Query log**
 
-Category cards show drifting / total counts and filter the table by category.
-State (All / Missing / Differs) and text filters narrow the rows, with one value
-column per reachable instance. Only drifting entries cross the wire, capped at
-200 per category; counts remain exact and capped categories are identified.
-Refresh is explicit, with no polling, mutation, or reconciliation; each row links to its
-owning page, with CNAME rows opening the CNAME records tab.
+- Rows from every instance merge newest first.
+- The time window is 60–86400 seconds (default 3600). The per-instance row limit is 1–500
+  (default 100).
+- When results are truncated, the page shows matching counts and how far back FTL's
+  in-memory history goes. Narrowing the window or filters shows the rest. FilterHelm never
+  reads FTL's on-disk history.
 
-States match the owning pages: conflict outranks missing; DNS compares addresses,
-CNAMEs compare target and TTL, block lists/domains/groups compare presence and
-enabled state, and clients compare presence only. Block lists retain raw address
-keys. Comments and group assignments are not compared. Settings compare raw
-values, including list order; display strings are presentation only. Unset values
-show “(not set)” and empty displays show “(empty)”.
+**Filters**
 
-An instance must answer all five reads to participate. Any failed read excludes
-its entire snapshot and shows an error. Missing means absent on a reachable
-instance, never unknown on an unreachable one. Fewer than two reachable
-instances produces a warning; single-instance self-conflicts still appear.
+- Status is either one FTL status or "Blocked (any reason)". Blocked uses FTL's own
+  twelve-status `is_blocked()` set, including `DBBUSY`.
+- FTL accepts one status per request, so for "Blocked" the server reads each blocked status,
+  sums the counts, merges newest first, and caps the result at the per-instance limit.
+- Domain and client filters accept FTL wildcards and reject whitespace and slashes. Domains
+  are lowercased.
+- A client pattern made only of hex digits, `.`, `:`, and `*`, with at least one dot or
+  colon, is sent as `client_ip`. Any other pattern is sent as `client_name`. A hex-only
+  hostname such as `cafe.dead` is therefore treated as an IP pattern.
+
+**Statistics**
+
+- Statistics always cover FTL's last 24 hours, regardless of log filters and window.
+- Summary cards show per-instance counters and combined totals for the instances that
+  answered.
+- Top domains and clients show ten per instance. There is no combined ranking, because
+  truncated lists cannot be summed accurately.
+- Upstreams keep the `cache` and `blocklist` pseudo-entries (`port: -1`), shown without an
+  address or response time. Real upstream response times are shown in milliseconds.
+- Switching tabs makes no new request.
+
+### 5.10 Drift
+
+**Scope**
+
+- The read-only Drift page compares local DNS A/AAAA records, CNAMEs, block lists, domains,
+  groups, clients, and the four managed settings in one `GET /api/drift` request.
+- Each instance uses one session with five reads in order. DNS, CNAMEs, and settings share
+  one config fetch.
+- Refresh is explicit. The page never polls, writes, or reconciles.
+
+**Display**
+
+- Category cards show drifting and total counts and filter the table by category.
+- State (All, Missing, Differs) and text filters narrow the rows. Each reachable instance
+  gets its own value column.
+- Only drifting entries are sent to the browser, capped at 200 per category. Counts stay
+  exact, and capped categories are labeled.
+- Each row links to the page that owns it. CNAME rows open the CNAME tab.
+
+**Comparison**
+
+- States match the owning pages, and a conflict outranks a missing entry.
+- DNS compares addresses, and CNAMEs compare target and TTL.
+- Block lists, domains, and groups compare presence and enabled state. Clients compare
+  presence only.
+- Block lists compare raw addresses. Comments and group assignments are not compared.
+- Settings compare raw values, including list order. Unset values show "(not set)" and
+  empty ones "(empty)".
+
+**Reachability**
+
+- An instance must answer all five reads to take part. Any failed read excludes it and
+  shows an error.
+- "Missing" always means absent on a reachable instance, never unknown on an unreachable
+  one.
+- Fewer than two reachable instances produces a warning. Conflicts within a single
+  instance still appear.
 
 ### 5.11 Audit log viewer
 
-- The Audit log page provides read-only `GET /api/audit-log` access behind the
-  existing authentication middleware. Viewing creates no audit entry.
-- Instance, action, and actor filters match exactly on the server. Case-insensitive
-  text search matches values and nested keys, including literal backslashes,
-  rather than JSON-escaped text. Dropdowns use facets from the entire file.
-- The server scans the whole file and returns matching entries newest first in
-  append order, with a default limit of 200 and maximum of 1000. The exact
-  `matched` count includes matches beyond the returned limit.
-- Malformed or partial lines are skipped and counted; the page warns when lines
-  were skipped. Missing fields receive safe defaults.
-- Rows expand to show Before and After values. Filters and an explicit Refresh
-  button load results; there is no polling, mutation, or log export.
+- The Audit log page reads `GET /api/audit-log` behind normal authentication. Viewing the
+  log does not add to it.
+- Instance, action, and actor filters match exactly on the server. Text search is
+  case-insensitive and matches values and nested keys as written, including backslashes.
+  Filter dropdowns list every value in the whole file.
+- The server scans the whole file and returns matches newest first. The default limit is
+  200 and the maximum 1000. The `matched` count includes matches beyond the limit.
+- Malformed or partial lines are skipped and counted, and the page warns when that happens.
+  Missing fields get safe defaults.
+- Rows expand to show before and after values.
+- Results load from filters or an explicit Refresh. The page never polls, writes, or
+  exports.
 
 ---
 
 ## 6. Non-functional requirements
 
-- **Local only.** Binds to localhost/loopback if it runs as a local web
-  server (see §7.1) — never listens on the LAN interface.
-- **Credentials never in plain files committed anywhere.** Stored via OS
-  keyring or an encrypted local secrets file — see §7.3.
-- **No background activity.** No scheduler, no polling timer that mutates
-  state; reads for the dashboard are fine, writes only ever happen on an
-  explicit user action.
-- **Traceable.** Every mutating action (record write, adlist change,
-  gravity trigger, setting change) is logged locally with instance, what
-  changed, old value → new value, and timestamp. Given nebula-sync's
-  silent damage, an audit trail here is cheap insurance, not gold-plating.
-- **Low upkeep.** Should not need its own patching/monitoring/maintenance
-  routine to stay usable — it's a tool Kyrnveil runs occasionally, not a
-  service that needs to stay up. Weigh any dependency addition against that.
-- **Resilient to one instance being down.** If pihole1 or pihole2 is
-  unreachable, the app degrades to showing the others plus a clear
-  per-instance error, rather than failing the whole view.
+- **Private network only.** A local run binds to loopback. A hosted run sits behind an HTTPS
+  reverse proxy on a private network.
+- **Credentials stay out of plain config.** Instance passwords live in the OS keyring, or a
+  `0600` file when no keyring exists (§7.3). They never reach the browser.
+- **No background activity.** No scheduler and no timer that writes. Page reads are fine.
+  Writes happen only on an explicit action.
+- **Traceable.** Every change is audited with the instance, what changed, the old and new
+  values, and a timestamp. Sync tools fail silently, so a change history is worth its cost.
+- **Low upkeep.** FilterHelm is a tool people open occasionally, not a service that must
+  stay up. Weigh every new dependency against that.
+- **Tolerates a down instance.** If one instance is unreachable, pages show the rest plus a
+  clear per-instance error, instead of failing outright.
 
 ---
 
-## 7. Proposed architecture
+## 7. Architecture
 
-### 7.1 Tech stack
+### 7.1 Stack
 
-**Implemented direction: a small FastAPI backend plus a React/TypeScript
-frontend using Ant Design, run with one command as a browser-based UI.** The
-production frontend is pre-built and served by FastAPI, so this still runs as
-a single service and does not require Node.js on the deployment target.
+FilterHelm is a small FastAPI backend with a React, TypeScript, and Ant Design frontend.
+FastAPI serves the pre-built frontend, so the app runs as one service and deployment needs
+no Node.js.
 
-Rationale:
-- Matches the stack used by the other small Python services this runs
-  alongside — one less language/runtime to maintain.
-- Avoids Electron/Tauri packaging and update overhead for what is, per §6, a
-  low-upkeep tool.
-- Ant Design supplies consistent enterprise UI components, validation,
-  feedback, and design tokens for the table/form-heavy workflows in §5.
-- The v6 REST API calls this app makes are the same shape whether the UI is
-  a browser tab or a native window — nothing about the safety model in §4
-  depends on the frontend choice.
+- **Python backend.** One runtime to maintain, and the Pi-hole API calls are simple HTTP.
+- **Browser UI.** Avoids Electron or Tauri packaging and update work for a low-upkeep tool.
+- **Ant Design.** Provides consistent tables, forms, validation, feedback, and design
+  tokens for the table-heavy pages in §5.
+- **Frontend independence.** The safety rules in §4 live in the backend. They would hold
+  the same with any frontend.
 
-Alternative considered: a native desktop toolkit (e.g. PySide6). Viable if a
-"real window, not a browser tab" matters more than initial simplicity — worth
-revisiting if the local-web approach turns out annoying to launch day to day
-(e.g. wanting a taskbar icon / single-click launch rather than a terminal
-command). Flagging as a reversible decision, not a hard commitment.
+A native desktop toolkit such as PySide6 was considered. It would give a real window and a
+one-click launch, but it adds packaging work. The choice is reversible.
 
-### 7.2 High-level architecture
+### 7.2 Overview
 
 ```
-┌─────────────────────┐        ┌──────────────────────────┐
-│   Browser (UI)       │◄──────►│  Local app server         │
-│  127.0.0.1:PORT       │  HTTP  │  (FastAPI/Flask)          │
-└─────────────────────┘        │  - instance registry       │
-                                │  - diff engine             │
-                                │  - credential store        │
-                                │  - audit log               │
-                                └────────────┬─────────────┘
-                                             │ Pi-hole v6 REST API
-                                             │ (session auth per instance)
-                        ┌────────────────────┼────────────────────┐
-                        ▼                    ▼                    ▼
-                 ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-                 │  pihole1     │      │  pihole2     │      │  (future)    │
-                 │ .1.2         │      │ .1.3         │      │  instance N  │
-                 └─────────────┘      └─────────────┘      └─────────────┘
+┌──────────────────┐        ┌──────────────────────────┐
+│  Browser (UI)    │◄──────►│  FilterHelm (FastAPI)    │
+│  React + AntD    │  /api  │  - instance registry     │
+└──────────────────┘        │  - diff and drift logic  │
+                            │  - credential store      │
+                            │  - audit log             │
+                            └────────────┬─────────────┘
+                                         │ Pi-hole v6 REST API
+                                         │ one session per operation
+                  ┌──────────────────────┼──────────────────────┐
+                  ▼                      ▼                      ▼
+           ┌─────────────┐        ┌─────────────┐        ┌─────────────┐
+           │  pihole-a   │        │  pihole-b   │        │  pihole-N   │
+           └─────────────┘        └─────────────┘        └─────────────┘
 ```
 
-### 7.3 Data & credential storage
+### 7.3 Data and credential storage
 
-- Local config directory, e.g. `~/.config/filterhelm/`:
-  - `instances.yml` — non-secret metadata: name, base URL, notes. Mirrors the
-    shape of the internal notes' `hosts.ini`, deliberately, since both tools
-    describe the same instances.
-  - Credentials **not** in that file. Use the OS keyring (Python `keyring`
-    package) keyed by instance name; falls back to a `chmod 600` local secrets
-    file only if no keyring backend is available.
-  - `audit.log` (or a small local SQLite/JSON file) for the change history
-    from §6.
-- No server-side database needed beyond that — instance lists and settings
-  are small, and the source of truth for DNS/adlist/settings data is always
-  the piholes themselves, fetched live rather than cached long-term.
+All state lives in one data directory. It defaults to `~/.config/filterhelm/` and can be
+changed with `FILTERHELM_DATA`.
+
+| File | Contents |
+| --- | --- |
+| `instances.yml` | Instance names, URLs, and other non-secret metadata |
+| `secrets.yml` | Instance passwords, only when no OS keyring is available (mode `0600`) |
+| `pending-gravity.yml` | Instances with block-list changes awaiting a gravity update |
+| `auth.db` | FilterHelm user accounts and sessions |
+| `audit.log` | Change history (mode `0600`) |
+
+FilterHelm does not cache Pi-hole data. The instances themselves are the source of truth
+for DNS records, lists, and settings, and every page reads them live.
+
+On a headless host there is no keyring, so the `secrets.yml` fallback is what runs. That
+file is protected by its permissions, not encrypted.
 
 ---
 
-## 8. Proposed UI layout
+## 8. UI layout
 
-Left nav, single content pane — five screens plus an instance-add modal.
+A left nav lists every page, and a single content pane shows the selected page:
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│  FilterHelm                                         [+ Add instance]│
-├───────────┬───────────────────────────────────────────────────────┤
-│ Dashboard │  DASHBOARD                                             │
-│ DNS       │  ┌───────────────┐  ┌───────────────┐                  │
-│ Adlists   │  │ pihole1        │  │ pihole2        │                 │
-│ Settings  │  │ ● reachable    │  │ ● reachable    │                 │
-│ Activity  │  │ 3 DNS drifts   │  │ 3 DNS drifts   │                 │
-│           │  │ 1 adlist diff  │  │ 1 adlist diff  │                 │
-│           │  └───────────────┘  └───────────────┘                  │
-│           │                                                        │
-│           │  Recent activity                                       │
-│           │  08-29 14:02  pihole1  local record added  (you)       │
-│           │  08-28 09:15  pihole2  adlist disabled      (you)       │
-└───────────┴───────────────────────────────────────────────────────┘
-```
+- Status
+- Queries
+- Drift
+- Instances
+- Local DNS
+- Domains
+- Lookup
+- Block Lists
+- Groups
+- Clients
+- Settings
+- Audit log
+
+The cross-instance pages share one shape, with a row per entry and a column per instance:
 
 ```
-  DNS RECORDS                                    [ + Add record ]
-  ┌───────────────────────────┬──────────────┬──────────────┬───────┐
-  │ Hostname                  │ pihole1       │ pihole2       │       │
-  ├───────────────────────────┼──────────────┼──────────────┼───────┤
-  │ router.example.com        │ .1.2   ✓     │ .1.2   ✓     │       │
-  │ switch.example.com        │ .1.18   ✓    │ — missing    │ [Copy →]│
-  │ nas.example.com           │ .1.40   ⚠    │ .1.41   ⚠    │ [Resolve]│
-  └───────────────────────────┴──────────────┴──────────────┴───────┘
-  ⚠ = conflicting IP        — = missing on that instance
+  LOCAL DNS                                          [ + Add record ]
+  ┌──────────────────────┬────────────────┬────────────────┬──────────┐
+  │ Hostname             │ pihole-a       │ pihole-b       │          │
+  ├──────────────────────┼────────────────┼────────────────┼──────────┤
+  │ router.example.com   │ 192.168.1.1  ✓ │ 192.168.1.1  ✓ │          │
+  │ switch.example.com   │ 192.168.1.18 ✓ │ — missing      │ [Copy →] │
+  │ nas.example.com      │ 192.168.1.40 ⚠ │ 192.168.1.41 ⚠ │          │
+  └──────────────────────┴────────────────┴────────────────┴──────────┘
+  ⚠ conflicting target     — missing on that instance
 ```
 
 ```
-  ADLISTS                                    [ + Add adlist to... ]
-  ┌───────────────────────────────────────┬──────────┬──────────┐
-  │ List URL                               │ pihole1   │ pihole2   │
-  ├───────────────────────────────────────┼──────────┼──────────┤
-  │ StevenBlack/hosts                       │ ● on      │ ● on      │
-  │ someone/extra-list                      │ ● on      │ — absent  │ [Add to pihole2]
-  └───────────────────────────────────────┴──────────┴──────────┘
-  pihole1: gravity up to date     pihole2: [ Update gravity ] (1 pending change)
+  BLOCK LISTS                                  [ + Add list ]
+  ┌──────────────────────────────┬────────────┬────────────┐
+  │ List URL                     │ pihole-a   │ pihole-b   │
+  ├──────────────────────────────┼────────────┼────────────┤
+  │ StevenBlack/hosts            │ ● on       │ ● on       │
+  │ example/extra-list           │ ● on       │ — missing  │ [Copy to pihole-b]
+  └──────────────────────────────┴────────────┴────────────┘
+  pihole-a: up to date     pihole-b: [ Update gravity ] (1 pending change)
 ```
 
-```
-  SETTINGS — pihole2 ▾                                    [ Save changes ]
-  ┌─────────────────────────────────────────────────────────────────┐
-  │ Upstream DNS servers        [ 9.9.9.9, 149.112.112.112       ]   │
-  │ Conditional forwarding      [x] enabled   192.168.1.1   / .home  │
-  │ Query logging                [x] enabled                        │
-  │ Privacy level                 [ 0 - show everything ▾ ]          │
-  └─────────────────────────────────────────────────────────────────┘
-  Instance picker at top switches context — settings are per-instance,
-  not synced, per §5.4.
-```
+Settings are per instance, so that page has an instance picker instead of instance
+columns:
 
 ```
-  ADD INSTANCE (modal)
-  ┌───────────────────────────────────────┐
-  │ Name          [ pihole3            ]   │
-  │ Base URL      [ http://192.168.1.x ]   │
-  │ App password  [ ••••••••••••••••   ]   │
-  │                                        │
-  │        [ Test connection ]  [ Save ]   │
-  └───────────────────────────────────────┘
+  SETTINGS — pihole-b ▾                              [ Review changes ]
+  ┌──────────────────────────────────────────────────────────────┐
+  │ Upstream DNS servers     [ 9.9.9.9, 149.112.112.112       ]  │
+  │ Conditional forwarding   [ true,192.168.1.0/24,192.168.1.1 ] │
+  │ Query logging            [x] enabled                         │
+  │ Privacy level            [ 0 - show everything ▾ ]           │
+  └──────────────────────────────────────────────────────────────┘
 ```
 
-Every mutating button (`Copy →`, `Update gravity`, `Save changes`, adlist
-add/remove) opens a confirm step showing the exact diff before it fires —
-per §4, that step is not optional or skippable, including bulk actions, which show every
-affected record and instance before firing.
+Every button that changes something opens a confirmation showing the exact diff first.
+That step cannot be skipped. Bulk actions list every affected entry and instance before
+they run.
 
 ---
 
-## 9. Open questions
+## 9. Deployment
 
-- ~~**Where does the code live?**~~ — **decided: its own Gitea repo.** **Updated 2026-08-30: this design doc moved here too**
-  (`docs/design.md`), rather than staying behind in a private infrastructure repo — a standalone app
-  is better off self-documenting in its own repo than relying on a companion
-  doc (and a chat transcript) living somewhere else. See §12.
-- **DHCP-adjacent records** — partially answered: **there is currently no
-  overlap** — OPNsense manages zero local DNS entries today, so Pi-hole is
-  the sole source for all of them. That was worth confirming explicitly
-  rather than assumed. What's still open is the roadmap item this surfaced —
-  see §13.
-- **Settings scope** — §5.4's subset list is a starting guess; confirm which
-  settings actually matter before building the screen.
-- **Local-web vs. native window** — §7.1 recommends local-web; revisit if
-  daily launch friction makes that annoying in practice.
-
-## 10. MVP scope
-
-**Built so far** (commit `11a2ed5`):
-- §5.1: add/edit/remove instance, credential storage (keyring with a
-  root-owned-file fallback — see §12's note on why the fallback path is the
-  one that actually matters once this runs on a headless LXC), test-connection,
-  live blocking status, and confirmed individual/group pause and resume.
-- §5.4: view/edit a defined field subset (upstream DNS, query logging,
-  privacy level, conditional forwarding), diff-before-write confirm screen,
-  audit log entry per change.
-- §5.2: unified hostname view across instances, missing/conflict indicators,
-  and confirmed per-instance add/edit/delete using item-level `dns.hosts`
-  API operations.
-- §5.3: unified subscribed block-list view, per-instance add/copy,
-  enable/disable/remove actions, persistent pending-gravity state, and a
-  separate confirmed gravity update.
-- Smoke-tested end to end against a throwaway fake Pi-hole v6 API server,
-  including catching a real bug before it shipped: an unchecked HTML
-  checkbox submits nothing at all, which the first pass mistook for "field
-  untouched" instead of "turned off" — fixed so absence of a boolean field
-  on this form always means `False`.
-- **Still unverified**: `app/pihole_client.py`'s actual endpoint paths and
-  payload shapes against a real pihole1/pihole2, per that file's own
-  docstring warning. Confirming that is the next real step, not further
-  scaffolding.
-
----
-
-## 11. Repo and hosting
-
-**Hosting: a dedicated deploy host.** Putting the app behind the reverse
-proxy does not require putting it on the proxy host. Keeping the app on a
-separate host preserves the proxy's dedicated role and isolates the app's
-resource needs. The deploy host was stood up on 2026-08-30; reverse-proxy
-configuration is pending its IP being on hand.
-
-**Access control matters for a credential-mutating tool.** This app can
-rewrite DNS records and flip adlists off. In addition to §6's local/LAN
-restriction, add a reverse-proxy **Access List** (HTTP basic auth): this
-tool deserves more access friction than a read-only dashboard.
-
-**Deploy mechanism: Gitea Actions, worked out in `docs/deploy.md`.** The
-runner lives directly on the deploy target, scoped to this repo. A deploy
-is a local `git reset --hard` + service restart, with no SSH keys or
-cross-host access needed for the deployment steps. See the runbook for
-setup details, still unexecuted as of this writing.
-
-Deployment shape: a non-root container managed by a rootful Podman Quadlet.
-The image uses the committed frontend bundle and hash-pinned Python dependencies.
-The Quadlet generates `filterhelm.service`; see [deploy.md](deploy.md) for
-bootstrap, cutover, and rollback instructions.
+FilterHelm ships as a container image with the committed frontend and hash-pinned Python
+dependencies. The reference deployment runs it as a non-root container under a rootful
+Podman Quadlet, which generates `filterhelm.service`:
 
 ```ini
 [Container]
@@ -549,109 +478,46 @@ NoNewPrivileges=true
 DropCapability=ALL
 ```
 
-Note the bind address flips from `127.0.0.1` (§7's original workstation
-assumption) to `0.0.0.0` here: this is a hosted service that other LAN
-devices reach through the reverse proxy. The proxy handles LAN-facing
-exposure and access control, while the app binds its host's interface.
-`Network=host` preserves this listen posture and real client addresses.
+- The container listens on `0.0.0.0:8420`. A reverse proxy on the private network handles
+  TLS and is the only client that should reach it.
+- `Network=host` keeps that listening setup and preserves real client addresses.
+- The app writes only to `/data`. The rest of the container filesystem is read-only.
 
-**Credential storage on this host:** `app/config.py`'s `CredentialStore`
-already handles this — it tries the OS keyring first and falls back to a
-`chmod 600` YAML file at `/var/lib/filterhelm/secrets.yml` on the host
-(`/data/secrets.yml` in the container) when no keyring backend exists, which is
-the expected case on a headless LXC. That fallback path, not the keyring path,
-is what actually runs once this is hosted rather than run from a developer's
-desktop session.
+[deploy.md](deploy.md) covers bootstrap, cutover, and rollback.
 
 ---
 
-## 12. Long-term: OPNsense-managed local DNS too
+## 10. Open items
 
-**TODO:** Add support for maintaining local DNS entries in OPNsense.
+**Features**
 
-Flagged as a decent long-term addition: extend this app (or its scope) to
-also manage OPNsense's local DNS entries, once the Pi-hole side is solid.
-Two things worth deciding before starting that, not before finishing §5.1/§5.4:
+- **Unreachable DNS targets.** Flag local records whose target address does not answer.
+  This would be informational only and never block a change.
+- **Accepted differences.** Let the operator mark a difference as intentional so it stops
+  showing as drift.
+- **Settings scope.** The four managed settings (§5.4) are a starting set. Add more only
+  when there is a clear need.
+- **Router DNS.** Possibly manage local DNS on routers that have their own API, such as
+  OPNsense. The open question is whether a router becomes another kind of instance, which
+  would reuse the diff, confirm, and audit logic, or stays a separate tool that keeps
+  FilterHelm's reach limited to DNS resolvers.
 
-- **Does it become a third kind of "instance"** in this same app (OPNsense
-  has its own REST API), or a separate concern entirely? The former reuses
-  the diff/confirm/audit machinery already built for Pi-hole; the latter
-  keeps this app's blast radius to DNS resolvers only, which the nebula-sync
-  history (§4) is a reasonable argument for keeping narrow.
-- **What changes about the "no current overlap" fact above** the moment
-  OPNsense records exist too — that's the same overlap question §10 flagged,
-  just now with an actual second party instead of a hypothetical one.
+**Safety and testing**
 
-Not scoped further than that here — genuinely a "later" item, not this
-quarter's.
+- **Credential fallback.** Evaluate an encrypted or mounted-secret alternative to the
+  plaintext `0600` `secrets.yml`.
+- **Mutation tests.** Cover partial failures and rollback, concurrent drift, multi-host
+  `dns.hosts` lines, IPv6, read-only settings, and partly reachable instance sets.
+- **Known gaps.**
+  - Multi-instance list and domain adds give no per-instance recovery signal if the client
+    times out mid-loop.
+  - List and domain updates read the entry, then write it back whole. That can overwrite a
+    comment or group change someone made in Pi-hole's own UI in between.
+  - Fixing either likely means idempotent adds or optimistic concurrency on
+    `date_modified`, applied to both features together.
 
----
+**Project**
 
-## 13. UI follow-ups
-
-- **Done — searchable Local DNS:** the unified table filters client-side by
-  hostname, IP address, or instance name without modifying records or their
-  missing/conflict indicators.
-
----
-
-## 14. Public-release readiness
-
-- **Done — privacy scrub:** plan 0016 scrubbed the working tree. Plan 0033
-  rewrote history for the public identity. `tests/test_repo_hygiene.py` guards both.
-- **TODO — licensing:** choose and add an open-source license.
-- **Done — access control:** local Argon2id administrator authentication with
-  opaque server-side sessions is the default; deployments may explicitly use
-  trusted reverse-proxy identity-header mode instead. The modes never fall
-  back to one another.
-- **Done — request integrity:** same-origin `Origin`/`Referer` and Fetch
-  Metadata checks protect every mutating method, including compatibility
-  Jinja forms. Reverse proxies must preserve the public `Host` header.
-- **Done — legacy cleanup:** the superseded Jinja instance/settings routes,
-  templates, static CSS, and form-only dependencies were removed after the
-  React UI reached feature parity. Settings validation now lives in a
-  route-independent module used by the JSON API.
-- **Done — outbound request policy:** instance URLs use centralized
-  origin-only HTTP(S) validation, prohibit embedded credentials and
-  redirects, allow RFC1918/IPv6 ULA destinations by default, and require an
-  exact-hostname, exact-IP, or CIDR allowlist for public destinations. The
-  baseline pre-connect DNS check and its DNS-rebinding/TOCTOU limitation are
-  documented in the README. New block-list URLs receive syntax validation and
-  canonicalization only: HTTP(S) is required, embedded credentials, control
-  characters, fragments, and prohibited literal-IP hosts are rejected. They are
-  not resolved or subject to `FILTERHELM_PUBLIC_ALLOWLIST`, because Pi-hole
-  fetches them. Update, delete, and bulk inputs identify existing lists without
-  URL screening.
-- **TODO — secrets:** document the `0600` YAML fallback as protected plaintext
-  and evaluate an encrypted or mounted-secret alternative.
-- **Done — compatibility:** FTL 6.x is the declared supported API family.
-  The Instances UI shows server-reported Core, Web, FTL, and Docker versions,
-  compatibility status, and available updates; future majors are marked
-  untested rather than assumed compatible.
-- **Done — HTTP hardening:** bounded request bodies, process-local sliding
-  window rate limits, an explicit inbound trusted-host list, browser security
-  headers, and sanitized upstream errors are enforced. Environment controls
-  and the multi-worker/reverse-proxy rate-limit limitations are documented in
-  the README.
-- **Done — local privacy:** `audit.log` is forced to mode `0600`; documentation
-  identifies the usernames, client addresses, DNS data, and setting values it
-  retains and explicitly excludes passwords and session tokens.
-- **Done — reproducibility:** exact direct requirements are declared in
-  `pyproject.toml`, with the complete Linux production closure recorded in
-  `requirements.lock`.
-- **TODO — safety tests:** cover partial mutation failures and rollback,
-  concurrent drift, multi-host records, IPv6, environment-locked settings,
-  and partially reachable instance sets. Concrete known instance (flagged by
-  a Codex adversarial review of plan 0003, accepted as shipped rather than
-  blocking that plan): `adlist_add`/`domain_add`'s sequential multi-instance
-  loops give no per-instance recovery signal on a client-side timeout
-  mid-loop, and `update_adlist`/`update_domain`'s fetch-then-full-PUT can
-  silently clobber a concurrent comment/group edit made outside this app
-  (e.g. via Pi-hole's own web UI). A fix would likely mean either an
-  idempotent/no-op-on-identical-state add, or optimistic concurrency via
-  `date_modified`/`date_updated`, applied to both features together.
-- **Distribution:** the container image and Compose example ship with the committed
-  frontend assets. A versioned release archive is still open.
-- **TODO — project operations:** add contribution and security policies,
-  screenshots, issue templates, automated checks, upgrade notes, and backup
-  instructions.
+- A versioned release archive alongside the container image.
+- A contribution guide, security policy, screenshots, issue templates, upgrade notes, and
+  backup instructions.

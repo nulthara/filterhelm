@@ -33,7 +33,7 @@ jobs:
         run: |
           set -eu
           # The service account's sudoers rule only allows this one redeploy
-          # command (docs/deploy.md §6) — a failed restart would otherwise
+          # command (docs/deploy.md §5) — a failed restart would otherwise
           # look identical to a slow-starting one, so check rather than assume.
           for i in $(seq 1 10); do
             if curl -fsS -o /dev/null http://127.0.0.1:8420/api/auth/status; then
