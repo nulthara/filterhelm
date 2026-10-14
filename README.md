@@ -295,6 +295,13 @@ Backend tests:
 ./.venv/bin/pip install -e '.[dev]'
 ./.venv/bin/pytest -q
 ```
+## How this is built
+
+FilterHelm is developed with AI coding agents under human direction. Claude
+writes a plan for each change, Codex implements it, and Claude reviews the
+diff against the plan and the project's safety rules. I review and approve
+every merge. The process is described in [ARCHITECT.md](ARCHITECT.md), and
+each change's plan is in [docs/plans/](docs/plans/).
 
 ## Roadmap
 

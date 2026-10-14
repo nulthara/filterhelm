@@ -13,7 +13,7 @@ This repo uses a three-role loop for any non-trivial change:
 
 - **Architect** and **Reviewer** are the same Claude Code session, wearing different hats.
 - **Implementer** is Codex, invoked through the `codex` plugin (`/codex:rescue`, or the
-  `/handoff` wrapper). see CLAUDE.md § Toolchain prerequisites for installation
+  `/handoff` wrapper). See CLAUDE.md § Toolchain prerequisites for installation.
 - The **plan file** is the contract between the phases. Codex implements the plan, not the
   chat transcript. The Reviewer checks the diff against the plan, not against memory.
 
@@ -175,8 +175,8 @@ The Reviewer still owns the final verdict; treat Codex's review as input.
 Derived from `README.md` and `docs/design.md`. A change may not break these without an
 explicit, approved plan decision that says so.
 
-1. **One instance mutated at a time.** Never write to pihole1 and pihole2 in the same
-   operation or on the same schedule. This is why `nebula-sync` was rejected.
+1. **One instance mutated at a time.** Never write to individual pihole instances at the same
+   operation or on the same schedule. This is partly why alternative solutions were rejected.
 2. **Diff before write.** Mutations are computed from a comparison against current state,
    not applied blind.
 3. **Gravity updates are gated behind real changes.** No gravity rebuild unless an adlist
@@ -238,8 +238,6 @@ When in doubt, write the plan. It's cheap.
 - One plan → one branch → one fast-forward-only merge to `main` on the forge.
   If `main` moved, rebase the branch on `origin/main` first.
 - Merge only after an **Accept** verdict.
-- Push to GitHub only from `main`, with `git push github main`, after
-  `FILTERHELM_REQUIRE_DENYLIST=1 ./.venv/bin/pytest` passes.
 - The plan file stays in the repo as the record of why the change looks the way it does;
   mark it `Status: shipped` on merge.
 - After merge, confirm the deploy came back up (the workflow curls
