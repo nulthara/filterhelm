@@ -1,3 +1,7 @@
+export interface VersionInfo {
+  version: string
+}
+
 export type FtlAction = 'restart_dns' | 'flush_logs' | 'flush_network'
 
 export interface FtlActionResult {
@@ -547,6 +551,7 @@ export interface DriftResponse {
 }
 
 export const api = {
+  version: (signal?: AbortSignal) => request<VersionInfo>('/api/version', { signal }),
   drift: (signal?: AbortSignal) => request<DriftResponse>('/api/drift', { signal }),
   auditLog: (filters: AuditLogFilters, signal?: AbortSignal) => {
     const params = new URLSearchParams({

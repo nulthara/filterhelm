@@ -21,6 +21,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app import __version__
 from app.audit import record
 from app.config import (
     CredentialStore,
@@ -75,6 +76,15 @@ def _fanout(items: list[_Item], worker: Callable[[_Item], _Result]) -> list[_Res
         max_workers=min(_FANOUT_WORKERS, len(items) or 1)
     ) as executor:
         return list(executor.map(worker, items))
+
+
+class VersionInfo(BaseModel):
+    version: str
+
+
+@router.get("/version", response_model=VersionInfo)
+def version() -> VersionInfo:
+    return VersionInfo(version=__version__)
 
 
 class FtlActionResult(BaseModel):

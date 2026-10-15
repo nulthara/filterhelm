@@ -238,3 +238,9 @@ def test_proxy_middleware_rejects_duplicate_identity_headers(tmp_path):
         "/api/instances",
         [("x-forwarded-user", "kyrnveil"), ("x-forwarded-user", "attacker")],
     ) == 401
+
+
+def test_version_route_requires_authentication(tmp_path) -> None:
+    manager = local_manager(tmp_path)
+
+    assert middleware_status(manager, "/api/version") == 401

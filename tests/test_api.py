@@ -2589,3 +2589,9 @@ def test_adlist_bulk_collapses_literal_duplicates_silently(bulk_client):
     result = _adlist_batch("delete", [address, address])
     assert bulk_client.deletes == [address]
     assert result["results"] == [{"id": address, "success": True, "changed": True, "error": None}]
+
+
+def test_version_route_returns_app_version() -> None:
+    from app import __version__
+
+    assert api.version().model_dump() == {"version": __version__}

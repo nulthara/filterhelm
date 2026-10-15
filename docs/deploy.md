@@ -281,3 +281,25 @@ sudo systemctl restart filterhelm.service
 
 An image becomes `:good` only after passing the probe. If a deployed image passes the
 probe but misbehaves, revert the commit on `main` and push.
+
+## Releasing
+
+Bump `app/__init__.py`, `frontend/package.json` and both root version fields in
+`frontend/package-lock.json` through a normal plan. After merge, run the required
+hygiene checks and push main to the GitHub mirror:
+
+```bash
+FILTERHELM_REQUIRE_DENYLIST=1 ./.venv/bin/pytest
+git push github main
+```
+
+Tag the merged commit with the matching version and push only that tag:
+
+```bash
+git tag -a vX.Y.Z -m "FilterHelm X.Y.Z"
+git push github vX.Y.Z
+```
+
+The publish workflow checks that the tag matches `app.__version__` before building.
+The image lands at `ghcr.io/nulthara/filterhelm` with tags `X.Y.Z`, `X.Y` and `latest`,
+for `amd64` and `arm64`.

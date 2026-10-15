@@ -74,3 +74,41 @@ def test_pyproject_pins_match_lock() -> None:
         name, separator, version = dependency.partition("==")
         assert separator, f"Unpinned direct dependency: {dependency}"
         assert lock[normalize(name)] == version
+
+
+def test_versions_agree() -> None:
+    import json
+    from app import __version__
+
+    package = json.loads((ROOT / "frontend/package.json").read_text())
+    lock = json.loads((ROOT / "frontend/package-lock.json").read_text())
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)
+    assert __version__ == package["version"] == lock["version"] == lock["packages"][""]["version"]
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    assert "version" not in project["project"]
+    assert "version" in project["project"]["dynamic"]
+    assert project["tool"]["setuptools"]["dynamic"]["version"]["attr"] == "app.__version__"
+
+
+def test_publish_workflow_pins_actions_by_sha() -> None:
+    text = (ROOT / ".github/workflows/publish-image.yml").read_text()
+    actions = [line for line in text.splitlines() if "uses:" in line]
+    assert actions
+    assert all(re.search(r"@[0-9a-f]{40}\s+# v\d+\.\d+\.\d+\s*$", line) for line in actions)
+
+
+def test_publish_workflow_shape() -> None:
+    import yaml
+
+    text = (ROOT / ".github/workflows/publish-image.yml").read_text()
+    workflow = yaml.safe_load(text)
+    assert workflow[True] == {"push": {"tags": ["v*"]}}
+    assert set(workflow["jobs"]) == {"publish"}
+    job = workflow["jobs"]["publish"]
+    assert job["permissions"] == {"contents": "read", "packages": "write"}
+    build = next(step for step in job["steps"] if step.get("uses", "").startswith("docker/build-push-action@"))
+    assert build["with"]["platforms"] == "linux/amd64,linux/arm64"
+    assert build["with"]["provenance"] is False
+    assert build["with"]["sbom"] is False
+    assert "pip install" not in text
+    assert set(re.findall(r"secrets\.[A-Za-z0-9_]+", text)) == {"secrets.GITHUB_TOKEN"}

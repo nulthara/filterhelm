@@ -16,6 +16,7 @@ import DriftPage, { type DriftTarget } from './pages/DriftPage'
 import { api, type AuthStatus } from './api'
 import brandMark from './assets/filterhelm-icon-compact.svg'
 import ThemeToggle from './ThemeToggle'
+import { releaseUrl } from './release'
 
 const { Header, Sider, Content } = Layout
 
@@ -24,6 +25,7 @@ export default function App() {
   const [page, setPage] = useState('status')
   const [dnsTab, setDnsTab] = useState<DNSTab>('hosts')
   const [auth, setAuth] = useState<AuthStatus>()
+  const [version, setVersion] = useState<string>()
   const [authError, setAuthError] = useState<string>()
   const [loggingIn, setLoggingIn] = useState(false)
   const [loginForm] = Form.useForm<{ username: string; password: string }>()
@@ -32,6 +34,13 @@ export default function App() {
 
   const refreshAuth = () => api.authStatus().then(setAuth).catch((error) => setAuthError(error instanceof Error ? error.message : 'Unable to check authentication'))
   useEffect(() => { void refreshAuth() }, [])
+
+  useEffect(() => {
+    if (!auth?.authenticated) return
+    const controller = new AbortController()
+    void api.version(controller.signal).then((info) => setVersion(info.version)).catch(() => {})
+    return () => controller.abort()
+  }, [auth?.authenticated])
 
   const sessionExpiredHandling = useRef(false)
   useEffect(() => api.onSessionExpired(() => {
@@ -95,6 +104,7 @@ export default function App() {
       <Header className="app-header">
         <img className="brand-mark" src={brandMark} alt="" width={32} height={32} />
         <Typography.Title level={4} className="brand-title">FilterHelm</Typography.Title>
+        {version ? <Typography.Link className="app-version" href={releaseUrl(version)} target="_blank" rel="noopener noreferrer">v{version}</Typography.Link> : null}
         <Space className="auth-actions">
           <ThemeToggle />
           <Typography.Text className="auth-user">{auth.user}</Typography.Text>
