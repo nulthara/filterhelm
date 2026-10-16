@@ -1,6 +1,6 @@
 # 0034 — Publish the image to GHCR and show the app version
 
-Status: in-review            <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0034-ghcr-image-and-version
 Author: Kyrnveil
 Date: 2026-10-14

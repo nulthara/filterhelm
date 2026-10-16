@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest a new feature or a change to existing behavior.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check docs/potential-features.md first. Your idea may already be listed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: How should FilterHelm behave?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use now, or other approaches you considered.
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Safety rules
+      description: FilterHelm changes one instance at a time, shows differences before writing, and runs nothing in the background.
+      options:
+        - label: This request fits within those rules, or explains why one should change.
+          required: true

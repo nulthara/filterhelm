@@ -4,7 +4,7 @@ This runbook sets up continuous deployment with Gitea Actions. Every push to `ma
 rebuilds the FilterHelm container on the deploy host and restarts it. A failed health
 check rolls the deploy back automatically.
 
-To run FilterHelm without CI, use the Compose setup in the [README](../README.md#run-in-a-container),
+To run FilterHelm without CI, use the Compose setup in the [README](../README.md#run-in-a-container-from-a-clone),
 or follow §3–§6 and run the redeploy script by hand.
 
 ---

@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in FilterHelm does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report security problems privately instead. See SECURITY.md.
+        Replace real hostnames, IP addresses, and domains with placeholders before posting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Local DNS page
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: FilterHelm version
+      description: Shown in the app's header after sign-in, or the image tag you run.
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run FilterHelm?
+      options:
+        - Container image from GHCR
+        - Docker or Podman Compose from a clone
+        - Podman Quadlet (docs/deploy.md)
+        - Local Python virtualenv
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: auth-mode
+    attributes:
+      label: Authentication mode
+      options:
+        - Local
+        - Proxy
+    validations:
+      required: true
+  - type: input
+    id: ftl-version
+    attributes:
+      label: Pi-hole FTL version(s)
+      description: From the Instances page. List each instance if they differ.
+      placeholder: v6.1
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Container or server log lines around the failure. Remove credentials and addresses.
+      render: text

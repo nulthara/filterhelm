@@ -45,6 +45,16 @@ FilterHelm takes a slower, safer approach:
 | Settings | Reviews and updates a small set of settings on one instance |
 | Audit log | Shows every sign-in and configuration change |
 
+### Drift Page
+![Drift page comparing two instances](docs/screenshots/drift.png)
+
+### Managing DNS across Pi-holes
+![Local DNS records across instances](docs/screenshots/local-dns.png)
+
+### Find where a Domain is blocked from
+![Lookup verdicts per instance](docs/screenshots/lookup.png)
+
+
 More detail on individual pages is in [Page behavior](#page-behavior). The design doc,
 requirements, and layout mockups are in [docs/design.md](docs/design.md).
 
@@ -65,7 +75,22 @@ FILTERHELM_COOKIE_SECURE=false ./.venv/bin/uvicorn app.main:app --host 127.0.0.1
 Open `http://127.0.0.1:8420/` and sign in. `FILTERHELM_COOKIE_SECURE=false` allows sign-in
 over plain HTTP. Use it only on loopback.
 
-### Run in a container
+### Run the published image
+
+Images for `amd64` and `arm64` are published to `ghcr.io/nulthara/filterhelm`.
+
+```bash
+docker run -d --name filterhelm --read-only --tmpfs /tmp \
+  -p 127.0.0.1:8420:8420 \
+  -e FILTERHELM_COOKIE_SECURE=false \
+  -v filterhelm-data:/data \
+  ghcr.io/nulthara/filterhelm:latest
+docker exec -it filterhelm python -m app.auth set-password --username admin
+```
+
+Pin a version tag such as `0.2.0` instead of `latest` for anything long-lived.
+
+### Run in a container from a clone
 
 ```bash
 docker compose up -d --build
@@ -74,9 +99,20 @@ docker compose exec filterhelm python -m app.auth set-password --username admin
 
 `podman compose` works the same way. Open `http://127.0.0.1:8420/`.
 
-For production deployment, see [docs/deploy.md](docs/deploy.md).
+For production deployment, see [docs/deploy.md](docs/deploy.md). For backups and
+upgrades, see [docs/upgrade-and-backup.md](docs/upgrade-and-backup.md).
 
 ## Security
+
+Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
+
+### Credential storage
+
+Pi-hole passwords stay on the server and never reach the browser. FilterHelm stores them
+in the OS keyring when one exists. Containers and headless hosts have no keyring, so the
+passwords go in `secrets.yml` in the data directory. File permissions (`0600`) protect
+that file, but it is not encrypted. Protect the data directory and its backups
+accordingly.
 
 ### Authentication
 
@@ -295,6 +331,9 @@ Backend tests:
 ./.venv/bin/pip install -e '.[dev]'
 ./.venv/bin/pytest -q
 ```
+
+To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## How this is built
 
 FilterHelm is developed with AI coding agents under human direction. Claude
@@ -307,3 +346,7 @@ each change's plan is in [docs/plans/](docs/plans/).
 
 Planned and candidate features are listed in
 [docs/potential-features.md](docs/potential-features.md).
+
+## License
+
+FilterHelm is released under the [MIT License](LICENSE).
