@@ -105,11 +105,31 @@ def test_publish_workflow_shape() -> None:
     assert workflow[True] == {"push": {"tags": ["v*"]}}
     assert set(workflow["jobs"]) == {"publish"}
     job = workflow["jobs"]["publish"]
-    assert job["permissions"] == {"contents": "read", "packages": "write"}
+    assert job["permissions"] == {
+        "contents": "read", "packages": "write", "id-token": "write",
+        "attestations": "write", "artifact-metadata": "write",
+    }
     build = next(step for step in job["steps"] if step.get("uses", "").startswith("docker/build-push-action@"))
     assert build["with"]["platforms"] == "linux/amd64,linux/arm64"
     assert build["with"]["provenance"] is False
     assert build["with"]["sbom"] is False
+    assert build["id"] == "build"
+    steps = job["steps"]
+    sbom, provenance, attestation = steps[steps.index(build) + 1:]
+    assert sbom["uses"].startswith("anchore/sbom-action@")
+    assert sbom["with"]["image"] == "${{ env.IMAGE }}@${{ steps.build.outputs.digest }}"
+    assert sbom["with"]["format"] == "spdx-json"
+    assert sbom["with"]["output-file"] == "sbom.spdx.json"
+    assert sbom["with"]["syft-version"] == "v1.54.0"
+    assert sbom["with"]["upload-artifact"] is False
+    assert sbom["with"]["upload-release-assets"] is False
+    for step in (provenance, attestation):
+        assert step["uses"].startswith("actions/attest@")
+        assert step["with"]["subject-name"] == "${{ env.IMAGE }}"
+        assert step["with"]["subject-digest"] == "${{ steps.build.outputs.digest }}"
+        assert step["with"]["push-to-registry"] is True
+    assert "sbom-path" not in provenance["with"]
+    assert attestation["with"]["sbom-path"] == "sbom.spdx.json"
     assert "pip install" not in text
     assert set(re.findall(r"secrets\.[A-Za-z0-9_]+", text)) == {"secrets.GITHUB_TOKEN"}
 

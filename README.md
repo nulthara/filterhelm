@@ -93,6 +93,17 @@ docker exec -it filterhelm python -m app.auth set-password --username admin
 
 Pin a version tag such as `0.2.0` instead of `latest` for anything long-lived.
 
+### Verify an image
+
+Each release image carries signed build provenance and an SPDX SBOM describing the
+`amd64` image. Verify them with:
+
+```bash
+gh attestation verify oci://ghcr.io/nulthara/filterhelm:X.Y.Z --owner nulthara
+gh attestation verify oci://ghcr.io/nulthara/filterhelm:X.Y.Z --owner nulthara \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
 ### Run in a container from a clone
 
 ```bash
