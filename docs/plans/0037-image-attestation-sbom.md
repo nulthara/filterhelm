@@ -1,6 +1,6 @@
 # 0037 — Sign build provenance and an SBOM for the GHCR image
 
-Status: in-review            <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0037-image-attestation-sbom
 Author: Kyrnveil
 Date: 2026-10-17
