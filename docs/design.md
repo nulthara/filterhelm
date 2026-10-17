@@ -167,6 +167,7 @@ These rules are the reason the project exists. Every feature follows them.
   across instances, because some, such as upstream resolvers, are legitimately
   host-specific.
 - Every change shows a diff before it is applied.
+- Apply refuses with 409 when the instance’s values no longer match the reviewed diff.
 
 ### 5.5 Domain allow/deny overrides
 
@@ -506,8 +507,8 @@ DropCapability=ALL
 
 - **Credential fallback.** Evaluate an encrypted or mounted-secret alternative to the
   plaintext `0600` `secrets.yml`.
-- **Mutation tests.** Cover partial failures and rollback, concurrent drift, multi-host
-  `dns.hosts` lines, IPv6, read-only settings, and partly reachable instance sets.
+- **Mutation safety follow-ups.** Detect env-forced settings and handle audit-after-write
+  failures in single-instance group, client and domain routes.
 - **Known gaps.**
   - Multi-instance list and domain adds give no per-instance recovery signal if the client
     times out mid-loop.

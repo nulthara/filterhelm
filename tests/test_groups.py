@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -16,17 +17,28 @@ class FakeCredentials:
 
 
 class FakeGroupsPiholeClient:
+    unreachable: set[str] = set()
+    transport_fail_add: set[str] = set()
+    fail_write: dict[str, Exception] = {}
+    audits = []
     items = {}; added = []; updated = []; fail_add = set()
     adlists = {}; domains = {}; calls = []; pending = []; audits = []
     fail_adlist_delete = set(); fail_domain_update = set()
     def __init__(self, base_url, *_args, **_kwargs): self.name = base_url.removeprefix("http://")
     def __enter__(self): return self
     def __exit__(self, *_args): pass
-    def get_groups(self): return self.items.get(self.name, []).copy()
+    def get_groups(self):
+        if self.name in self.unreachable:
+            raise httpx.ConnectError("boom")
+        return self.items.get(self.name, []).copy()
     def add_group(self, name, comment=""):
+        if self.name in self.transport_fail_add:
+            raise httpx.ConnectError("boom")
         if self.name in self.fail_add: raise PiholeAPIError("group add failed")
         self.added.append((self.name, name, comment)); self.items.setdefault(self.name, []).append(make_group(name, comment=comment))
     def update_group(self, item, *, enabled):
+        if self.name in self.fail_write:
+            raise self.fail_write[self.name]
         self.updated.append((self.name, item, enabled)); self.items[self.name] = [Group(current.id, current.name, current.comment, enabled, current.date_added, current.date_modified) if current == item else current for current in self.items.get(self.name, [])]
     def delete_group(self, name):
         self.calls.append((self.name, "delete_group", name))
@@ -59,8 +71,12 @@ def make_group(name, *, enabled=True, comment=""): return Group(5, name, comment
 
 
 def setup_groups(monkeypatch):
+    FakeGroupsPiholeClient.unreachable = set()
+    FakeGroupsPiholeClient.transport_fail_add = set()
+    FakeGroupsPiholeClient.fail_write = {}
+    FakeGroupsPiholeClient.audits = []
     instances = [Instance(name="pihole1", base_url="http://pihole1"), Instance(name="pihole2", base_url="http://pihole2")]
-    monkeypatch.setattr(groups, "load_instances", lambda: instances.copy()); monkeypatch.setattr(groups, "credentials", FakeCredentials()); monkeypatch.setattr(groups, "PiholeClient", FakeGroupsPiholeClient); monkeypatch.setattr(groups, "record", lambda *_args: None)
+    monkeypatch.setattr(groups, "load_instances", lambda: instances.copy()); monkeypatch.setattr(groups, "credentials", FakeCredentials()); monkeypatch.setattr(groups, "PiholeClient", FakeGroupsPiholeClient); monkeypatch.setattr(groups, "record", lambda *args: FakeGroupsPiholeClient.audits.append(args))
     FakeGroupsPiholeClient.adlists = {}; FakeGroupsPiholeClient.domains = {}; FakeGroupsPiholeClient.calls = []
     FakeGroupsPiholeClient.pending = []; FakeGroupsPiholeClient.audits = []
     FakeGroupsPiholeClient.fail_adlist_delete = set(); FakeGroupsPiholeClient.fail_domain_update = set()
@@ -323,3 +339,44 @@ def test_group_delete_continues_after_transport_failure_without_leaking_details(
     assert result["orphans"][0]["error"] == "Unable to update Pi-hole entry"
     assert result["orphans"][1]["success"] is True
     assert fake.pending == []
+
+
+def test_groups_list_reports_unreachable_instance(monkeypatch):
+    setup_groups(monkeypatch)
+    FakeGroupsPiholeClient.items = {"pihole1": [make_group('Kids')]}
+    FakeGroupsPiholeClient.unreachable = {"pihole2"}
+    result = groups.groups_list()
+    assert result["errors"] == {"pihole2": "Unable to reach Pi-hole instance"}
+    assert result["groups"][0]["name"] == 'Kids'
+    assert "pihole1" in result["groups"][0]["instances"]
+
+
+def test_group_add_hides_transport_error_and_continues(monkeypatch):
+    setup_groups(monkeypatch)
+    FakeGroupsPiholeClient.transport_fail_add = {"pihole1"}
+    result = groups.group_add(groups.GroupAddInput(
+        instances=["pihole1", "pihole2"], name="Kids",
+    ))
+    assert [entry["success"] for entry in result["results"]] == [False, True]
+    assert result["results"][0]["error"] == "Unable to update Pi-hole groups"
+    assert [entry[0] for entry in FakeGroupsPiholeClient.added] == ["pihole2"]
+    assert "boom" not in repr(result)
+
+
+@pytest.mark.parametrize(("error", "status", "detail"), [
+    (PiholeAPIError("write failed"), 502, "write failed"),
+    (httpx.ConnectError("boom"), 503, "Unable to reach Pi-hole instance"),
+])
+@pytest.mark.parametrize("operation", ['group_update'])
+def test_group_write_failure_is_not_audited(monkeypatch, operation, error, status, detail):
+    setup_groups(monkeypatch)
+    FakeGroupsPiholeClient.items = {"pihole1": [make_group('Kids')]}
+    FakeGroupsPiholeClient.fail_write = {"pihole1": error}
+    payloads = {
+        "group_update": groups.GroupUpdateInput(name="Kids", enabled=False),
+    }
+    with pytest.raises(HTTPException) as caught:
+        getattr(groups, operation)("pihole1", payloads[operation])
+    assert caught.value.status_code == status
+    assert caught.value.detail == detail
+    assert FakeGroupsPiholeClient.audits == []

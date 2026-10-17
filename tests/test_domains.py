@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -15,6 +16,10 @@ class FakeCredentials:
 
 
 class FakeDomainsPiholeClient:
+    unreachable: set[str] = set()
+    transport_fail_add: set[str] = set()
+    fail_write: dict[str, Exception] = {}
+    audits = []
     items: dict[str, list[Domain]] = {}
     added = []
     updated = []
@@ -30,9 +35,13 @@ class FakeDomainsPiholeClient:
         pass
 
     def get_domains(self):
+        if self.name in self.unreachable:
+            raise httpx.ConnectError("boom")
         return self.items.get(self.name, []).copy()
 
     def add_domain(self, domain, type, kind, comment=""):
+        if self.name in self.transport_fail_add:
+            raise httpx.ConnectError("boom")
         if self.name in self.fail_add:
             raise PiholeAPIError("domain add failed")
         self.added.append((self.name, domain, type, kind, comment))
@@ -41,6 +50,8 @@ class FakeDomainsPiholeClient:
         )
 
     def update_domain(self, item, *, enabled, groups):
+        if self.name in self.fail_write:
+            raise self.fail_write[self.name]
         self.updated.append((self.name, item, enabled, groups))
         self.items[self.name] = [
             Domain(
@@ -59,6 +70,8 @@ class FakeDomainsPiholeClient:
         ]
 
     def delete_domain(self, domain, type, kind):
+        if self.name in self.fail_write:
+            raise self.fail_write[self.name]
         self.items[self.name] = [
             item for item in self.items.get(self.name, [])
             if (item.domain, item.type, item.kind) != (domain, type, kind)
@@ -77,6 +90,10 @@ def make_domain(
 
 
 def setup_domains(monkeypatch):
+    FakeDomainsPiholeClient.unreachable = set()
+    FakeDomainsPiholeClient.transport_fail_add = set()
+    FakeDomainsPiholeClient.fail_write = {}
+    FakeDomainsPiholeClient.audits = []
     instances = [
         Instance(name="pihole1", base_url="http://pihole1"),
         Instance(name="pihole2", base_url="http://pihole2"),
@@ -84,7 +101,7 @@ def setup_domains(monkeypatch):
     monkeypatch.setattr(domains, "load_instances", lambda: instances.copy())
     monkeypatch.setattr(domains, "credentials", FakeCredentials())
     monkeypatch.setattr(domains, "PiholeClient", FakeDomainsPiholeClient)
-    monkeypatch.setattr(domains, "record", lambda *_args: None)
+    monkeypatch.setattr(domains, "record", lambda *args: FakeDomainsPiholeClient.audits.append(args))
     FakeDomainsPiholeClient.items = {}
     FakeDomainsPiholeClient.added = []
     FakeDomainsPiholeClient.updated = []
@@ -561,3 +578,45 @@ def test_domain_bulk_collapses_literal_duplicates_silently(domain_bulk_client):
     assert result["results"] == [{
         "id": "deny:exact:ads.example", "success": True, "changed": True, "error": None,
     }]
+
+
+def test_domains_list_reports_unreachable_instance(monkeypatch):
+    setup_domains(monkeypatch)
+    FakeDomainsPiholeClient.items = {"pihole1": [make_domain('ads.example')]}
+    FakeDomainsPiholeClient.unreachable = {"pihole2"}
+    result = domains.domains_list()
+    assert result["errors"] == {"pihole2": "Unable to reach Pi-hole instance"}
+    assert result["domains"][0]["domain"] == 'ads.example'
+    assert "pihole1" in result["domains"][0]["instances"]
+
+
+def test_domain_add_hides_transport_error_and_continues(monkeypatch):
+    setup_domains(monkeypatch)
+    FakeDomainsPiholeClient.transport_fail_add = {"pihole1"}
+    result = domains.domain_add(domains.DomainAddInput(
+        instances=["pihole1", "pihole2"], domain="ads.example", type="deny", kind="exact",
+    ))
+    assert [entry["success"] for entry in result["results"]] == [False, True]
+    assert result["results"][0]["error"] == "Unable to update Pi-hole domains"
+    assert [entry[0] for entry in FakeDomainsPiholeClient.added] == ["pihole2"]
+    assert "boom" not in repr(result)
+
+
+@pytest.mark.parametrize(("error", "status", "detail"), [
+    (PiholeAPIError("write failed"), 502, "write failed"),
+    (httpx.ConnectError("boom"), 503, "Unable to reach Pi-hole instance"),
+])
+@pytest.mark.parametrize("operation", ['domain_update', 'domain_delete'])
+def test_domain_write_failure_is_not_audited(monkeypatch, operation, error, status, detail):
+    setup_domains(monkeypatch)
+    FakeDomainsPiholeClient.items = {"pihole1": [make_domain('ads.example')]}
+    FakeDomainsPiholeClient.fail_write = {"pihole1": error}
+    payloads = {
+        "domain_update": domains.DomainUpdateInput(domain="ads.example", type="deny", kind="exact", enabled=False),
+        "domain_delete": domains.DomainDeleteInput(domain="ads.example", type="deny", kind="exact"),
+    }
+    with pytest.raises(HTTPException) as caught:
+        getattr(domains, operation)("pihole1", payloads[operation])
+    assert caught.value.status_code == status
+    assert caught.value.detail == detail
+    assert FakeDomainsPiholeClient.audits == []

@@ -440,7 +440,7 @@ def test_settings_apply_writes_pihole_revservers_array(monkeypatch):
     reverse_server = "true,192.168.1.0/24,192.168.1.1,lan"
 
     response = api.settings_apply(
-        "pihole1", api.SettingsInput(values={"dns.revServers": [reverse_server]})
+        "pihole1", api.SettingsApplyInput(values={"dns.revServers": [reverse_server]}, expected={"dns.revServers": []})
     )
 
     assert response["applied"] == 1
@@ -454,7 +454,7 @@ def test_settings_apply_disables_conditional_forwarding_with_empty_array(monkeyp
     ]
     try:
         response = api.settings_apply(
-            "pihole1", api.SettingsInput(values={"dns.revServers": []})
+            "pihole1", api.SettingsApplyInput(values={"dns.revServers": []}, expected={"dns.revServers": FakePiholeClient.tree["dns"]["revServers"]})
         )
     finally:
         FakePiholeClient.tree["dns"]["revServers"] = []
@@ -812,7 +812,7 @@ def test_transport_error_response_is_sanitized():
 def test_settings_apply_writes_only_changed_managed_fields(monkeypatch):
     setup_api(monkeypatch)
     response = api.settings_apply(
-        "pihole1", api.SettingsInput(values={"dns.queryLogging": False, "misc.privacylevel": 0})
+        "pihole1", api.SettingsApplyInput(values={"dns.queryLogging": False, "misc.privacylevel": 0}, expected={"dns.queryLogging": True})
     )
 
     assert response["applied"] == 1
@@ -825,7 +825,7 @@ def test_settings_rejects_unknown_fields(monkeypatch):
 
     setup_api(monkeypatch)
     with pytest.raises(HTTPException) as caught:
-        api.settings_apply("pihole1", api.SettingsInput(values={"dangerous.unknown": True}))
+        api.settings_apply("pihole1", api.SettingsApplyInput(values={"dangerous.unknown": True}, expected={}))
 
     assert caught.value.status_code == 422
     assert FakePiholeClient.patches == []
@@ -837,7 +837,7 @@ def test_settings_rejects_invalid_privacy_level(monkeypatch):
 
     setup_api(monkeypatch)
     with pytest.raises(HTTPException) as caught:
-        api.settings_apply("pihole1", api.SettingsInput(values={"misc.privacylevel": 4}))
+        api.settings_apply("pihole1", api.SettingsApplyInput(values={"misc.privacylevel": 4}, expected={}))
 
     assert caught.value.status_code == 422
     assert caught.value.detail == "Privacy level must be between 0 and 3"
@@ -2595,3 +2595,171 @@ def test_version_route_returns_app_version() -> None:
     from app import __version__
 
     assert api.version().model_dump() == {"version": __version__}
+
+
+def test_settings_apply_input_requires_expected():
+    with pytest.raises(ValidationError):
+        api.SettingsApplyInput(values={})
+    assert api.SettingsInput(values={}).values == {}
+
+
+def _assert_settings_drift(monkeypatch, scenario, values, expected):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    old_logging = FakePiholeClient.tree["dns"]["queryLogging"]
+    old_privacy = FakePiholeClient.tree["misc"]["privacylevel"]
+    try:
+        if scenario in {"untouched", "edited"}:
+            FakePiholeClient.tree["misc"]["privacylevel"] = 2
+        if scenario == "landed":
+            FakePiholeClient.tree["dns"]["queryLogging"] = False
+        with pytest.raises(HTTPException) as caught:
+            api.settings_apply("pihole1", api.SettingsApplyInput(values=values, expected=expected))
+        assert caught.value.status_code == 409
+        assert caught.value.detail == "Settings on pihole1 changed since the review. Review the changes again."
+        assert FakePiholeClient.patches == []
+        assert audits == []
+    finally:
+        FakePiholeClient.tree["dns"]["queryLogging"] = old_logging
+        FakePiholeClient.tree["misc"]["privacylevel"] = old_privacy
+
+
+def test_settings_apply_proceeds_when_expected_matches(monkeypatch):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    result = api.settings_apply("pihole1", api.SettingsApplyInput(
+        values={"dns.queryLogging": False}, expected={"dns.queryLogging": True},
+    ))
+    assert result["applied"] == 1
+    assert FakePiholeClient.patches == [{"dns": {"queryLogging": False}}]
+    assert audits == [("pihole1", "settings_change", {"dns.queryLogging": True}, {"dns.queryLogging": False})]
+
+
+def _assert_settings_patch_failure(monkeypatch, error, status, detail):
+    setup_api(monkeypatch)
+    audits = []
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    def fail_patch(self, patch):
+        raise error
+    monkeypatch.setattr(FakePiholeClient, "patch_config", fail_patch)
+    with pytest.raises(HTTPException) as caught:
+        api.settings_apply("pihole1", api.SettingsApplyInput(
+            values={"dns.queryLogging": False}, expected={"dns.queryLogging": True},
+        ))
+    assert caught.value.status_code == status
+    assert detail in caught.value.detail
+    assert "boom" not in caught.value.detail
+    assert audits == []
+
+
+def test_dns_add_rejects_ipv6_duplicate_spelled_differently(monkeypatch):
+    setup_api(monkeypatch)
+    original = FakePiholeClient.tree["dns"]["hosts"]
+    try:
+        FakePiholeClient.tree["dns"]["hosts"] = ["fd00::1 box.lan"]
+        with pytest.raises(HTTPException) as caught:
+            api.dns_record_add(api.DNSRecordInput(instance="pihole1", hostname="box.lan", address="fd00:0:0:0:0:0:0:1"))
+        assert caught.value.status_code == 409
+        assert FakePiholeClient.added_hosts == []
+    finally:
+        FakePiholeClient.tree["dns"]["hosts"] = original
+
+
+def test_dns_delete_matches_ipv6_spelled_differently(monkeypatch):
+    setup_api(monkeypatch)
+    original = FakePiholeClient.tree["dns"]["hosts"]
+    try:
+        FakePiholeClient.tree["dns"]["hosts"] = ["fd00::1 box.lan nas.lan"]
+        api.dns_record_delete(api.DNSRecordInput(instance="pihole1", hostname="box.lan", address="fd00:0::1"))
+        assert FakePiholeClient.deleted_hosts == ["fd00::1 box.lan nas.lan"]
+        assert FakePiholeClient.added_hosts == ["fd00::1 nas.lan"]
+    finally:
+        FakePiholeClient.tree["dns"]["hosts"] = original
+
+
+def test_dns_update_ipv6_respelling_is_a_noop(monkeypatch):
+    setup_api(monkeypatch)
+    original = FakePiholeClient.tree["dns"]["hosts"]
+    try:
+        FakePiholeClient.tree["dns"]["hosts"] = ["fd00::1 box.lan"]
+        result = api.dns_record_update(api.DNSRecordUpdate(instance="pihole1", old_hostname="box.lan", hostname="box.lan", old_address="fd00::1", address="fd00:0:0:0:0:0:0:1"))
+        assert result == {"changed": False, "record": "fd00:0:0:0:0:0:0:1 box.lan"}
+        assert FakePiholeClient.added_hosts == FakePiholeClient.deleted_hosts == []
+    finally:
+        FakePiholeClient.tree["dns"]["hosts"] = original
+
+
+def test_dns_update_moves_record_to_ipv6(monkeypatch):
+    setup_api(monkeypatch)
+    calls = []
+    monkeypatch.setattr(FakePiholeClient, "add_dns_host", lambda self, raw: calls.append(("add", raw)))
+    monkeypatch.setattr(FakePiholeClient, "delete_dns_host", lambda self, raw: calls.append(("delete", raw)))
+    api.dns_record_update(api.DNSRecordUpdate(instance="pihole1", old_hostname="server.lan", hostname="server.lan", old_address="192.168.1.10", address="fd00::10"))
+    assert calls == [("add", "fd00::10 server.lan"), ("delete", "192.168.1.10 server.lan")]
+
+
+def test_dns_update_rejects_stale_original(monkeypatch):
+    setup_api(monkeypatch)
+    with pytest.raises(HTTPException) as caught:
+        api.dns_record_update(api.DNSRecordUpdate(instance="pihole1", old_hostname="missing.lan", hostname="server.lan", old_address="192.168.1.99", address="fd00::10"))
+    assert caught.value.status_code == 409
+    assert caught.value.detail == "The original record changed; refresh and try again"
+    assert FakePiholeClient.added_hosts == FakePiholeClient.deleted_hosts == []
+
+
+def test_dns_records_list_reports_unreachable_instance(monkeypatch):
+    instances, _ = setup_api(monkeypatch)
+    instances.append(Instance(name="pihole2", base_url="http://pihole2"))
+    def settings_tree(instance):
+        if instance.name == "pihole2":
+            raise HTTPException(status_code=503, detail="Unable to reach Pi-hole instance")
+        return FakePiholeClient.tree
+    monkeypatch.setattr(api, "_settings_tree", settings_tree)
+    result = api.dns_records_list()
+    assert result["errors"] == {"pihole2": "Unable to reach Pi-hole instance"}
+    assert result["records"][0]["hostname"] == "server.lan"
+    assert "pihole1" in result["records"][0]["instances"]
+    assert result["records"][0]["state"] == "consistent"
+
+
+def test_adlists_list_reports_unreachable_instance(monkeypatch):
+    instances, _ = setup_api(monkeypatch)
+    instances.append(Instance(name="pihole2", base_url="http://pihole2"))
+    def client(instance):
+        if instance.name == "pihole2":
+            raise httpx.ConnectError("boom")
+        return FakePiholeClient()
+    monkeypatch.setattr(api, "_client", client)
+    result = api.adlists_list()
+    assert result["errors"] == {"pihole2": "Unable to reach Pi-hole instance"}
+    assert result["adlists"][0]["address"] == "https://lists.example/block.txt"
+    assert "pihole1" in result["adlists"][0]["instances"]
+    assert "boom" not in repr(result)
+
+
+def test_settings_apply_rejects_value_changed_since_review(monkeypatch):
+    _assert_settings_drift(monkeypatch, "untouched",
+                           {"dns.queryLogging": False, "misc.privacylevel": 0},
+                           {"dns.queryLogging": True})
+    _assert_settings_drift(monkeypatch, "edited", {"misc.privacylevel": 1}, {"misc.privacylevel": 0})
+
+
+def test_settings_apply_rejects_change_that_already_landed(monkeypatch):
+    _assert_settings_drift(monkeypatch, "landed", {"dns.queryLogging": False}, {"dns.queryLogging": True})
+
+
+def test_settings_apply_drift_check_is_type_strict(monkeypatch):
+    _assert_settings_drift(monkeypatch, "strict", {"misc.privacylevel": 1}, {"misc.privacylevel": False})
+
+
+def test_settings_apply_rejected_patch_is_502_and_not_audited(monkeypatch):
+    _assert_settings_patch_failure(monkeypatch,
+        PiholeAPIError("Config item dns.queryLogging is read-only", status_code=400),
+        502, "Config item dns.queryLogging is read-only")
+
+
+def test_settings_apply_transport_failure_is_503_and_not_audited(monkeypatch):
+    _assert_settings_patch_failure(monkeypatch, httpx.ConnectError("boom"),
+                                   503, "Unable to reach Pi-hole instance")

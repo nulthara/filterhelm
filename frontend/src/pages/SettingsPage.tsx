@@ -4,6 +4,7 @@ import {
   Alert, App, Button, Card, Empty, Form, Input, InputNumber, Modal, Select, Skeleton, Space, Switch, Table, Typography,
 } from 'antd'
 import { api, type Change, type Instance, type SettingField, type SettingsValues } from '../api'
+import { reviewedBefore } from '../settings'
 
 const booleanValue = (value: unknown) => {
   if (typeof value === 'string') {
@@ -21,6 +22,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string>()
   const [changes, setChanges] = useState<Change[]>([])
   const [pendingValues, setPendingValues] = useState<SettingsValues>()
+  const [reviewed, setReviewed] = useState<SettingsValues>()
   const [applying, setApplying] = useState(false)
   const [form] = Form.useForm<SettingsValues>()
 
@@ -76,6 +78,7 @@ export default function SettingsPage() {
         message.info('No changes to apply')
         return
       }
+      setReviewed(reviewedBefore(result.changes))
       setPendingValues(values)
       setChanges(result.changes)
     } catch (reason) {
@@ -84,16 +87,20 @@ export default function SettingsPage() {
   }
 
   const apply = async () => {
-    if (!selected || !pendingValues) return
+    if (!selected || !pendingValues || !reviewed) return
     setApplying(true)
     try {
-      const result = await api.applySettings(selected, pendingValues)
+      const result = await api.applySettings(selected, pendingValues, reviewed)
       message.success(`${result.applied} change${result.applied === 1 ? '' : 's'} applied to ${selected}`)
       setChanges([])
       setPendingValues(undefined)
+      setReviewed(undefined)
       await loadSettings(selected)
     } catch (reason) {
       message.error(reason instanceof Error ? reason.message : 'Unable to apply changes')
+      setChanges([])
+      setPendingValues(undefined)
+      setReviewed(undefined)
     } finally {
       setApplying(false)
     }
@@ -181,7 +188,7 @@ export default function SettingsPage() {
         okText={`Apply to ${selected ?? 'instance'}`}
         onOk={() => void apply()}
         confirmLoading={applying}
-        onCancel={() => { setChanges([]); setPendingValues(undefined) }}
+        onCancel={() => { setChanges([]); setPendingValues(undefined); setReviewed(undefined) }}
       >
         <Typography.Paragraph>Current values were read from the instance. Review every difference before applying.</Typography.Paragraph>
         <Table

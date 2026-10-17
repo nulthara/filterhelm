@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 import concurrent.futures
 import hashlib
+import json
 from datetime import datetime, timezone
 import ipaddress
 import logging
@@ -119,6 +120,10 @@ class InstanceUpdate(BaseModel):
 
 class SettingsInput(BaseModel):
     values: dict[str, Any]
+
+
+class SettingsApplyInput(SettingsInput):
+    expected: dict[str, Any]
 
 
 class DNSRecordInput(BaseModel):
@@ -1297,12 +1302,12 @@ def dns_record_update(payload: DNSRecordUpdate):
     instance = _instance(payload.instance)
     old_record = _dns_record(payload.old_hostname, payload.old_address)
     new_record = _dns_record(payload.hostname, payload.address)
-    if old_record == new_record:
+    old_hostname = payload.old_hostname.strip().lower().rstrip(".")
+    new_hostname = payload.hostname.strip().lower().rstrip(".")
+    if _canonical_addr(payload.old_address) == _canonical_addr(payload.address) and old_hostname == new_hostname:
         return {"changed": False, "record": new_record}
     tree = _settings_tree(instance)
     rows = _parse_dns_hosts(tree)
-    old_hostname = payload.old_hostname.strip().lower().rstrip(".")
-    new_hostname = payload.hostname.strip().lower().rstrip(".")
     # issue #6: structural match, not reconstructed-string equality
     old_owner = next(
         (
@@ -1538,12 +1543,18 @@ def settings_diff(name: str, payload: SettingsInput):
 
 
 @router.post("/settings/{name}/apply")
-def settings_apply(name: str, payload: SettingsInput):
+def settings_apply(name: str, payload: SettingsApplyInput):
     instance = _instance(name)
     try:
         with _client(instance) as client:
             tree = client.get_config()
             changes = _changes(tree, payload.values)
+            current = {change["key"]: change["before"] for change in changes}
+            if json.dumps(current, sort_keys=True) != json.dumps(payload.expected, sort_keys=True):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Settings on {name} changed since the review. Review the changes again.",
+                )
             if not changes:
                 return {"applied": 0, "changes": []}
             patch: dict[str, Any] = {}

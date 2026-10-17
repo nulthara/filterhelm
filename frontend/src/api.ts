@@ -733,8 +733,8 @@ export const api = {
     request<{ changes: Change[] }>(`/api/settings/${encodeURIComponent(name)}/diff`, {
       method: 'POST', body: JSON.stringify({ values }),
     }),
-  applySettings: (name: string, values: SettingsValues) =>
+  applySettings: (name: string, values: SettingsValues, expected: SettingsValues) =>
     request<{ applied: number; changes: Change[] }>(`/api/settings/${encodeURIComponent(name)}/apply`, {
-      method: 'POST', body: JSON.stringify({ values }),
+      method: 'POST', body: JSON.stringify({ values, expected }),
     }),
 }
