@@ -1,6 +1,6 @@
 # 0036 — Close mutation-safety test gaps and guard settings apply against drift
 
-Status: in-review            <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0036-mutation-safety-tests
 Author: Kyrnveil
 Date: 2026-10-17
