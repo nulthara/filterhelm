@@ -42,8 +42,8 @@ def test_dockerfile_base_images_pinned_by_digest() -> None:
     assert all(re.search(r"@sha256:[0-9a-f]{64}(?:\s|$)", line) for line in images)
 
 
-def test_requirements_lock_is_fully_hashed() -> None:
-    text = (ROOT / "requirements.lock").read_text()
+def _assert_fully_hashed(path: Path) -> None:
+    text = path.read_text()
     entries = text.replace("\\\n", " ").splitlines()
     count = 0
     for entry in entries:
@@ -112,3 +112,97 @@ def test_publish_workflow_shape() -> None:
     assert build["with"]["sbom"] is False
     assert "pip install" not in text
     assert set(re.findall(r"secrets\.[A-Za-z0-9_]+", text)) == {"secrets.GITHUB_TOKEN"}
+
+
+def test_requirements_lock_is_fully_hashed() -> None:
+    _assert_fully_hashed(ROOT / "requirements.lock")
+
+
+def test_dev_lock_is_fully_hashed() -> None:
+    _assert_fully_hashed(ROOT / "requirements-dev.lock")
+
+
+def test_dev_extra_matches_dev_lock() -> None:
+    def normalize(name: str) -> str:
+        return re.sub(r"[-_.]+", "-", name).lower()
+
+    lock = {
+        normalize(match[1]): match[2]
+        for match in re.finditer(
+            r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s\\]+)",
+            (ROOT / "requirements-dev.lock").read_text(), re.MULTILINE,
+        )
+    }
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    for dependency in project["project"]["optional-dependencies"]["dev"]:
+        name, separator, version = dependency.partition("==")
+        assert separator, f"Unpinned dev dependency: {dependency}"
+        assert lock[normalize(name)] == version
+
+
+def test_dev_lock_does_not_overlap_runtime_lock() -> None:
+    def names(path: Path) -> set[str]:
+        return {
+            re.sub(r"[-_.]+", "-", match[1]).lower()
+            for match in re.finditer(
+                r"^([A-Za-z0-9][A-Za-z0-9._-]*)==", path.read_text(), re.MULTILINE,
+            )
+        }
+
+    assert not names(ROOT / "requirements.lock") & names(ROOT / "requirements-dev.lock")
+
+
+def test_ci_workflow_pins_actions_by_sha() -> None:
+    text = (ROOT / ".github/workflows/ci.yml").read_text()
+    actions = [line for line in text.splitlines() if "uses:" in line]
+    assert actions
+    assert all(re.search(r"@[0-9a-f]{40}\s+# v\d+\.\d+\.\d+\s*$", line) for line in actions)
+
+
+def test_ci_workflow_shape() -> None:
+    import yaml
+
+    text = (ROOT / ".github/workflows/ci.yml").read_text()
+    workflow = yaml.safe_load(text)
+    assert workflow[True] == {
+        "pull_request": {"branches": ["main"]}, "push": {"branches": ["main"]},
+    }
+    assert workflow["permissions"] == {"contents": "read"}
+    assert set(workflow["jobs"]) == {"backend", "frontend"}
+    assert "secrets." not in text
+    for name, job in workflow["jobs"].items():
+        assert "permissions" not in job
+        checkouts = [
+            step for step in job["steps"]
+            if step.get("uses", "").startswith("actions/checkout@")
+        ]
+        assert checkouts
+        for checkout in checkouts:
+            assert checkout["with"]["persist-credentials"] is False
+            if name == "backend":
+                assert checkout["with"]["fetch-depth"] == 0
+
+    backend = workflow["jobs"]["backend"]["steps"]
+    install_index = next(
+        index for index, step in enumerate(backend)
+        if "pip install" in step.get("run", "")
+    )
+    install = backend[install_index]["run"]
+    for required in (
+        "--require-hashes", "--only-binary=:all:",
+        "-r requirements.lock", "-r requirements-dev.lock",
+    ):
+        assert required in install
+    assert any("pytest" in step.get("run", "") for step in backend[install_index + 1:])
+
+    frontend = workflow["jobs"]["frontend"]["steps"]
+    previous = -1
+    for command in ("npm ci", "npm run lint", "npm test", "npm run build"):
+        index = next(index for index, step in enumerate(frontend) if step.get("run") == command)
+        assert index > previous
+        previous = index
+    assert any(
+        "git status --porcelain" in step.get("run", "")
+        and "app/static/ui" in step["run"]
+        for step in frontend[previous + 1:]
+    )

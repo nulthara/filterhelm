@@ -22,8 +22,8 @@ Requires Python 3.11 or newer and Node.js for frontend work.
 
 ```bash
 python3 -m venv .venv
-./.venv/bin/pip install -r requirements.lock
-./.venv/bin/pip install -e '.[dev]'
+./.venv/bin/pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+./.venv/bin/pip install --no-deps --no-build-isolation -e .
 cd frontend && npm ci
 ```
 
@@ -35,6 +35,9 @@ cd frontend && npm run dev
 ```
 
 ## Checks
+
+GitHub CI runs the same backend and frontend checks on every pull request, and fails if
+`app/static/ui/` does not match a fresh build.
 
 Run these before opening a pull request:
 

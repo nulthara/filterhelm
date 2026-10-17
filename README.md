@@ -328,7 +328,8 @@ frontend source.
 Backend tests:
 
 ```bash
-./.venv/bin/pip install -e '.[dev]'
+./.venv/bin/pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+./.venv/bin/pip install --no-deps --no-build-isolation -e .
 ./.venv/bin/pytest -q
 ```
 

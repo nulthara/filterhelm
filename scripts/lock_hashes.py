@@ -1,4 +1,4 @@
-"""Hash-pin runtime dependencies using only PyPI files at least 24 hours old."""
+"""Hash-pin a lock file (requirements.lock by default) using PyPI files at least 24 hours old."""
 from __future__ import annotations
 
 import json
@@ -94,17 +94,23 @@ def render_lock(header: list[str], entries: list[tuple[str, str, list[str]]]) ->
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
-    package = str(LOCK_PATH)
+def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if len(argv) > 1:
+        print("usage: lock_hashes.py [LOCK]", file=sys.stderr)
+        return 2
+    path = Path(argv[0]) if argv else LOCK_PATH
+    package = str(path)
     try:
-        header, pins = parse_lock(LOCK_PATH.read_text(encoding="utf-8"))
+        header, pins = parse_lock(path.read_text(encoding="utf-8"))
         now = datetime.now(UTC)
         entries: list[tuple[str, str, list[str]]] = []
         for name, version in pins:
             package = f"{name}=={version}"
             files = fetch_release_files(name, version)
             entries.append((name, version, select_hashes(name, version, files, now)))
-        LOCK_PATH.write_text(render_lock(header, entries), encoding="utf-8")
+        path.write_text(render_lock(header, entries), encoding="utf-8")
     except (LockError, URLError, OSError, HTTPException) as exc:
         print(f"{package}: {exc}", file=sys.stderr)
         return 1

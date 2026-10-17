@@ -95,3 +95,25 @@ def test_render_lock_round_trips() -> None:
         f"    --hash=sha256:{'c' * 64}\n"
     )
     assert lock_hashes.parse_lock(text) == (header, [("anyio", "4.15.1"), ("idna", "3.20")])
+
+
+def test_main_writes_given_lock_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "dev.lock"
+    path.write_text("demo==1.0\n")
+    monkeypatch.setattr(
+        lock_hashes, "fetch_release_files",
+        lambda name, version: [release_file("demo-1.0.whl", 48, "a" * 64)],
+    )
+
+    class Clock(datetime):
+        @staticmethod
+        def now(tz: Any) -> datetime:
+            return NOW
+
+    monkeypatch.setattr(lock_hashes, "datetime", Clock)
+    assert lock_hashes.main([str(path)]) == 0
+    assert "--hash=sha256:" + "a" * 64 in path.read_text()
+    assert lock_hashes.main(["a", "b"]) == 2
+    assert capsys.readouterr().err == "usage: lock_hashes.py [LOCK]\n"

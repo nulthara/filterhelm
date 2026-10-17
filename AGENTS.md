@@ -60,4 +60,5 @@ Coding rules for anyone — Claude or Codex — writing code in this repo. The *
   Majors need their own plan.
 - Python: edit pins in `requirements.lock` (and `pyproject.toml` for direct deps).
   Install with `--uploaded-prior-to P1D`. Run `pip check` and `pip-audit`. Then run
-  `python3 scripts/lock_hashes.py`. Never hand-edit `--hash` lines.
+  `python3 scripts/lock_hashes.py`. Test tools live in `requirements-dev.lock`, refreshed
+  with `python3 scripts/lock_hashes.py requirements-dev.lock`. Never hand-edit `--hash` lines.
