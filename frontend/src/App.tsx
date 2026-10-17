@@ -48,7 +48,7 @@ export default function App() {
     sessionExpiredHandling.current = true
     message.warning('Your session has expired. Please sign in again.')
     void refreshAuth().finally(() => { sessionExpiredHandling.current = false })
-  }), [])
+  }), [message])
 
   const login = async () => {
     const values = await loginForm.validateFields()
