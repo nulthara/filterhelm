@@ -45,6 +45,9 @@ FilterHelm takes a slower, safer approach:
 | Settings | Reviews and updates a small set of settings on one instance |
 | Audit log | Shows every sign-in and configuration change |
 
+### Query Page
+![Query page showing multiple Pi-hole instances](docs/screenshots/query.png)
+
 ### Drift Page
 ![Drift page comparing two instances](docs/screenshots/drift.png)
 
