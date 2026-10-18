@@ -33,6 +33,8 @@ Coding rules for anyone — Claude or Codex — writing code in this repo. The *
   operation. No background jobs, schedulers, or startup mutation.
 - Pydantic models for request/response bodies; mirror any shape change into `frontend/src/api.ts`.
 - New backend behaviour ships with a test in `tests/`. Run `./.venv/bin/pytest` before handoff.
+- `PiholeAPIError` messages must be fixed strings, optionally with `resp.status_code`,
+  because routes return them to the browser. `tests/test_error_messages.py` guards this convention.
 - Don't log secrets, passwords, app-passwords, or full Pi-hole URLs with credentials.
 
 ## Frontend (React / TypeScript / Ant Design)
