@@ -1,0 +1,25 @@
+# Pull the published image. compose.yaml builds from a clone.
+services:
+  filterhelm:
+    # Pin a version tag such as X.Y.Z for anything long-lived.
+    image: ghcr.io/nulthara/filterhelm:latest
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8420:8420"
+    environment:
+      FILTERHELM_AUTH_MODE: local
+      # Loopback HTTP only. Behind an HTTPS proxy, set this to "true" and add the public host below.
+      FILTERHELM_COOKIE_SECURE: "false"
+      FILTERHELM_TRUSTED_HOSTS: localhost,127.0.0.1
+    volumes:
+      - filterhelm-data:/data
+
+volumes:
+  filterhelm-data:

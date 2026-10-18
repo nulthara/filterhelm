@@ -226,3 +226,34 @@ def test_ci_workflow_shape() -> None:
         and "app/static/ui" in step["run"]
         for step in frontend[previous + 1:]
     )
+
+
+def test_sample_compose_pulls_published_image() -> None:
+    import yaml
+
+    compose = yaml.safe_load((ROOT / "compose.ghcr.yaml").read_text())
+    service = compose["services"]["filterhelm"]
+    assert service["image"].startswith("ghcr.io/nulthara/filterhelm:")
+    assert "build" not in service
+
+
+def test_sample_compose_keeps_hardening() -> None:
+    import yaml
+
+    compose = yaml.safe_load((ROOT / "compose.ghcr.yaml").read_text())
+    service = compose["services"]["filterhelm"]
+    assert service["read_only"] is True
+    assert "ALL" in service["cap_drop"]
+    assert "no-new-privileges:true" in service["security_opt"]
+    assert service["ports"]
+    assert all(port.startswith("127.0.0.1:") for port in service["ports"])
+
+
+def test_sample_compose_data_volume_matches_image() -> None:
+    import yaml
+
+    compose = yaml.safe_load((ROOT / "compose.ghcr.yaml").read_text())
+    data = re.search(r"\bFILTERHELM_DATA=(\S+)", (ROOT / "Dockerfile").read_text())
+    assert data is not None
+    assert f"filterhelm-data:{data[1]}" in compose["services"]["filterhelm"]["volumes"]
+    assert "filterhelm-data" in compose["volumes"]

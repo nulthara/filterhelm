@@ -117,10 +117,10 @@ Nothing is outstanding in this section.
 
 ## 5. Lower-priority / needs more thought
 
-- **Instance tagging/grouping** for fleets larger than the current two
-  (pihole1, pihole2) — filter/act by tag instead of per-instance. Low
-  value at the current fleet size; worth deferring until a third instance
-  actually shows up.
+- **Instance tagging/grouping** for fleets of more than a few
+  instances — filter/act by tag instead of per-instance. Low value at
+  small fleet sizes; worth deferring until a larger fleet actually
+  shows up.
 - **Alerting/notifications** (e.g., "blocking has been paused for over an
   hour", "an instance stopped responding"). Directly in tension with the
   no-background-scheduler invariant — anything that fires on its own

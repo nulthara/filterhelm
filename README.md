@@ -91,7 +91,20 @@ docker run -d --name filterhelm --read-only --tmpfs /tmp \
 docker exec -it filterhelm python -m app.auth set-password --username admin
 ```
 
-Pin a version tag such as `0.2.0` instead of `latest` for anything long-lived.
+Pin a version tag such as `0.2.1` instead of `latest` for anything long-lived.
+
+### Run with Compose
+
+Download the standalone [Compose sample](compose.ghcr.yaml) and start the published image:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/nulthara/filterhelm/main/compose.ghcr.yaml
+docker compose -f compose.ghcr.yaml up -d
+docker compose -f compose.ghcr.yaml exec filterhelm python -m app.auth set-password --username admin
+```
+
+Open `http://127.0.0.1:8420/` and sign in. If you rename the file to `compose.yaml`,
+you can drop `-f compose.ghcr.yaml` from the commands.
 
 ### Verify an image
 
