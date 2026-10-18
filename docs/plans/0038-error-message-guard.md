@@ -1,6 +1,6 @@
 # 0038 — Guard Pi-hole error messages against dynamic content
 
-Status: in-progress            <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0038-error-message-guard
 Author: Kyrnveil
 Date: 2026-10-17

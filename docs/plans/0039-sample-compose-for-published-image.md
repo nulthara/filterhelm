@@ -1,6 +1,6 @@
 # 0039 — Sample Compose file for the published image
 
-Status: in-progress            <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0039-sample-compose-ghcr
 Author: Kyrnveil
 Date: 2026-10-17
