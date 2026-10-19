@@ -121,4 +121,7 @@
   .fh-hero { grid-template-columns: minmax(0, 4fr) minmax(0, 5fr); gap: 3rem; }
 }
 
-.expressive-code pre { color: #E6F4FF; }
+.expressive-code pre {
+  color: #E6F4FF;
+  scrollbar-color: var(--ec-sbThumbCol) transparent;
+}
