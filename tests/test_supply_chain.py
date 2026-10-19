@@ -3,15 +3,18 @@ from __future__ import annotations
 
 import re
 import tomllib
+
+import pytest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_npmrc_sets_min_release_age() -> None:
+@pytest.mark.parametrize("package", ["frontend", "site"])
+def test_npmrc_sets_min_release_age(package: str) -> None:
     settings = dict(
         line.strip().split("=", 1)
-        for line in (ROOT / "frontend/.npmrc").read_text().splitlines()
+        for line in (ROOT / package / ".npmrc").read_text().splitlines()
         if line.strip() and not line.lstrip().startswith(("#", ";"))
     )
     assert int(settings["min-release-age"]) >= 1
@@ -188,7 +191,7 @@ def test_ci_workflow_shape() -> None:
         "pull_request": {"branches": ["main"]}, "push": {"branches": ["main"]},
     }
     assert workflow["permissions"] == {"contents": "read"}
-    assert set(workflow["jobs"]) == {"backend", "frontend"}
+    assert set(workflow["jobs"]) == {"backend", "frontend", "site"}
     assert "secrets." not in text
     for name, job in workflow["jobs"].items():
         assert "permissions" not in job

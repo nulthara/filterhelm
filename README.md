@@ -7,6 +7,8 @@
 
 Multiple instances. One control plane.
 
+[Documentation and getting started](https://filterhelm.nulthara.com).
+
 FilterHelm is a self-hosted web app for managing several Pi-hole instances from one place.
 It compares DNS records, block lists, domain overrides, groups, and clients across
 instances, and changes them one instance at a time.

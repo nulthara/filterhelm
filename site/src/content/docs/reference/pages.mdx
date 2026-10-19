@@ -1,0 +1,58 @@
+---
+title: App pages and compatibility
+description: What each FilterHelm page does and which Pi-hole API versions it supports.
+type: reference
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+
+## Pages
+
+| Page | What you can do |
+| --- | --- |
+| Status | See blocking state per instance, pause blocking, or resume it. Changes to several instances run one instance at a time and report partial failures. |
+| Queries | Read merged recent query logs and 24-hour statistics. The page loads when opened or when you click Apply or Refresh. |
+| Drift | Compare managed entries across reachable instances. Follow a row's Fix in link to the owning page; CNAME rows open the CNAME records tab. |
+| Instances | Add and remove instances, inspect versions and health, and download Teleporter backups. |
+| Local DNS | Compare and edit custom DNS host and CNAME records. Changes use item-level operations. |
+| Domains | Manage allow and deny overrides and their groups. |
+| Lookup | Look up whether each instance blocks, allows, or does not list a domain. Searches are read-only and run when submitted. |
+| Block Lists | Manage subscribed deny lists and their groups. Changed lists mark an instance as pending; Update gravity is a separate, confirmed action. |
+| Groups | Manage filtering groups and see differences between instances. |
+| Clients | Manage clients and their group membership. |
+| Settings | Review a diff and update a small set of settings on one instance. |
+| Audit log | Read and filter sign-ins, backup downloads, service actions, and configuration changes. Passwords and session tokens are not recorded. |
+
+[Read more about page behavior](https://github.com/nulthara/filterhelm#page-behavior).
+
+## Local DNS
+
+You compare records in one table across instances. A conflict means a hostname points to different targets. A missing entry exists on some instances but not others. A/AAAA host records and CNAME records have separate tabs.
+
+<Screenshot name="local-dns" alt="Local DNS comparison showing host records across Pi-hole instances." />
+
+[Read more about Local DNS](https://github.com/nulthara/filterhelm/blob/main/docs/design.md#52-local-dns-records).
+
+## Lookup
+
+Lookup derives verdicts from enabled matches in FTL's precedence order. Group-scoped entries may not apply to every client. Partial searches and exact searches with truncated results show matches without a verdict.
+
+<Screenshot name="lookup" alt="Domain lookup showing separate blocked, allowed, or not-listed verdicts per instance." />
+
+[Read more about Lookup](https://github.com/nulthara/filterhelm#page-behavior).
+
+## Queries
+
+You see query logs merged newest first, together with summary, top-domain, top-client, and upstream information. This page is read-only.
+
+<Screenshot name="query" alt="Queries page with recent query logs merged across Pi-hole instances." />
+
+[Read more about Queries](https://github.com/nulthara/filterhelm#page-behavior).
+
+## Pi-hole compatibility
+
+FilterHelm supports the Pi-hole FTL 6.x REST API. FTL 5.x is incompatible. A newer FTL major version is untested until someone confirms it works.
+
+Update availability comes from Pi-hole's own version check. When Pi-hole cannot reach its update server, FilterHelm shows the update state as unknown and makes no external request of its own.
+
+[Read more about compatibility](https://github.com/nulthara/filterhelm#pi-hole-compatibility).

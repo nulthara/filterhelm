@@ -1,0 +1,8 @@
+---
+import DefaultPageTitle from "@astrojs/starlight/components/PageTitle.astro";
+
+const { type } = Astro.locals.starlightRoute.entry.data;
+---
+
+{type && <p class="fh-eyebrow">{type.charAt(0).toUpperCase() + type.slice(1)}</p>}
+<DefaultPageTitle {...Astro.props} />

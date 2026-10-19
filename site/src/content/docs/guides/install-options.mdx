@@ -1,0 +1,93 @@
+---
+title: Install options
+description: Run the published image with Compose or Docker, or run FilterHelm from source.
+type: guide
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Choose the method that fits your host. The published image supports `amd64` and `arm64`. You can use `podman compose` in place of `docker compose`.
+
+<Tabs>
+<TabItem label="Compose">
+
+Download the standalone sample and start the published image.
+
+```bash frame="terminal"
+curl -fsSLO https://raw.githubusercontent.com/nulthara/filterhelm/main/compose.ghcr.yaml
+docker compose -f compose.ghcr.yaml up -d
+docker compose -f compose.ghcr.yaml exec filterhelm python -m app.auth set-password --username admin
+```
+
+The sample uses `ghcr.io/nulthara/filterhelm:latest`. Pin a version tag such as `0.2.1` for anything long-lived. If you rename the file to `compose.yaml`, you can drop `-f compose.ghcr.yaml` from the commands.
+
+[Read more in the Compose sample](https://github.com/nulthara/filterhelm/blob/main/compose.ghcr.yaml).
+
+</TabItem>
+<TabItem label="Docker run">
+
+Run the image with a read-only root filesystem and a persistent data volume.
+
+```bash frame="terminal"
+docker run -d --name filterhelm --read-only --tmpfs /tmp \
+  -p 127.0.0.1:8420:8420 \
+  -e FILTERHELM_COOKIE_SECURE=false \
+  -v filterhelm-data:/data \
+  ghcr.io/nulthara/filterhelm:latest
+docker exec -it filterhelm python -m app.auth set-password --username admin
+```
+
+Pin a version tag instead of `latest` for anything long-lived.
+
+[Read more about the published image](https://github.com/nulthara/filterhelm#run-the-published-image).
+
+</TabItem>
+<TabItem label="From source">
+
+In a clone of the repository, use Python 3.11 or newer.
+
+```bash frame="terminal"
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.lock
+./.venv/bin/pip install --no-deps --no-build-isolation -e .
+./.venv/bin/python -m app.auth set-password --username admin
+FILTERHELM_COOKIE_SECURE=false ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8420
+```
+
+The compiled app frontend is committed, so you do not need Node.js to run it.
+
+To build a container from a clone instead, run the repository's Compose file.
+
+```bash frame="terminal"
+docker compose up -d --build
+docker compose exec filterhelm python -m app.auth set-password --username admin
+```
+
+[Read more about running locally](https://github.com/nulthara/filterhelm#run-locally).
+
+</TabItem>
+</Tabs>
+
+Open `http://127.0.0.1:8420/` and sign in as `admin` with the password you set.
+
+## Verify the image
+
+Each release image carries signed build provenance and an SPDX SBOM describing the `amd64` image. Replace `X.Y.Z` with your release tag.
+
+```bash frame="terminal"
+gh attestation verify oci://ghcr.io/nulthara/filterhelm:X.Y.Z --owner nulthara
+gh attestation verify oci://ghcr.io/nulthara/filterhelm:X.Y.Z --owner nulthara \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+[Read more about image verification](https://github.com/nulthara/filterhelm#verify-an-image).
+
+## Serve over HTTPS
+
+`FILTERHELM_COOKIE_SECURE=false` allows sign-in over plain HTTP. Use it only on loopback. Production session cookies require HTTPS. Behind an HTTPS reverse proxy, set `FILTERHELM_COOKIE_SECURE=true` and add your public hostname to `FILTERHELM_TRUSTED_HOSTS`.
+
+Preserve the public `Host` header at the reverse proxy. Protect the data directory and its backups. On headless hosts, stored Pi-hole passwords are protected by file permissions but are not encrypted.
+
+[Read more about deployment](https://github.com/nulthara/filterhelm/blob/main/docs/deploy.md).
+
+For updates and recovery, [read more about upgrades and backups](https://github.com/nulthara/filterhelm/blob/main/docs/upgrade-and-backup.md).

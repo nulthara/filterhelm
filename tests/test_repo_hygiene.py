@@ -27,7 +27,8 @@ GENERIC_HOST_SUFFIXES = (
 ALLOWED_DOMAINS = {
     "example.com", "npmjs.org", "github.com", "githubusercontent.com",
     "jsdelivr.net", "opencollective.com", "tidelift.com", "eslint.org",
-    "ghcr.io", "spdx.dev",
+    "ghcr.io", "spdx.dev", "nulthara.com",
+    "paulmillr.com", "patreon.com", "locize.com", "i18next.com",
     "react.dev", "w3.org", "gitea.com", "pi.hole", "pypi.org",
 }
 IPV4_LITERAL = re.compile(r"(?<!\d)(?<!\d\.)(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)")

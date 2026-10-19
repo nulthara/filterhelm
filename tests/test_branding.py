@@ -38,3 +38,17 @@ def test_frontend_tokens_match_brand_kit() -> None:
         assert (ROOT / "frontend/src/assets" / filename).read_bytes() == (
             ROOT / "branding/tokens" / filename
         ).read_bytes()
+
+
+def test_site_assets_match_brand_kit() -> None:
+    for theme in ("light", "dark"):
+        name = f"filterhelm-horizontal-{theme}.svg"
+        assert (ROOT / "site/src/assets" / name).read_bytes() == (
+            ROOT / "branding/logos" / name
+        ).read_bytes()
+    assert (ROOT / "site/public/favicon.svg").read_bytes() == (
+        ROOT / "branding/logos/filterhelm-icon-compact.svg"
+    ).read_bytes()
+    assert (ROOT / "site/public/favicon-32.png").read_bytes() == (
+        ROOT / "branding/icons/filterhelm-32.png"
+    ).read_bytes()

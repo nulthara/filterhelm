@@ -1,0 +1,58 @@
+---
+title: Your first comparison
+description: Install FilterHelm with Compose, connect two Pi-hole instances, and compare them on Drift.
+type: tutorial
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import Screenshot from '../../../components/Screenshot.astro';
+
+You will install FilterHelm, add two instances, and see where their managed entries differ. Comparing them does not change either instance.
+
+You need Docker with Compose and two Pi-hole instances running FTL 6.x. You also need an app password for each instance.
+
+<Steps>
+
+1. **Start FilterHelm.**
+
+   Download the standalone Compose sample and start the published image.
+
+   ```bash frame="terminal"
+   curl -fsSLO https://raw.githubusercontent.com/nulthara/filterhelm/main/compose.ghcr.yaml
+   docker compose -f compose.ghcr.yaml up -d
+   docker compose -f compose.ghcr.yaml exec filterhelm python -m app.auth set-password --username admin
+   ```
+
+   Set your administrator password when prompted. The sample uses the published `ghcr.io/nulthara/filterhelm:latest` image. Pin a version tag for anything long-lived.
+
+   [Read more about install options](/guides/install-options/).
+
+2. **Sign in.**
+
+   Open `http://127.0.0.1:8420/` on the host running FilterHelm. Sign in as `admin` with the password you just set.
+
+   The sample sets `FILTERHELM_COOKIE_SECURE=false` for plain HTTP on loopback. Use this setting only on loopback. Production needs HTTPS.
+
+   [Read more about deployment](https://github.com/nulthara/filterhelm/blob/main/docs/deploy.md).
+
+3. **Add your two instances.**
+
+   Open **Instances**. Add each instance with a display name, its bare HTTP or HTTPS origin, and its app password. Test the connection before saving. Repeat for the other instance, then check that both are reachable.
+
+   <Screenshot name="first-run-instances" alt="Instances page with two healthy, reachable Pi-hole instances." />
+
+   [Read more about managing instances](/guides/manage-instances/).
+
+4. **Open Drift.**
+
+   Open **Drift** to compare managed entries. A missing entry exists on some reachable instances but not others. A conflict means the instances disagree on its value. An unreachable instance is reported as an error, not as missing entries.
+
+   You need at least two reachable instances for a comparison. If nothing differs, Drift has no differing rows to show. Refresh when you want to compare again.
+
+   To act on a difference, follow its **Fix in** link. Review the entry on the owning page and confirm a change for one instance. A CNAME row opens the CNAME records tab of Local DNS.
+
+   [Read more about Drift](https://github.com/nulthara/filterhelm/blob/main/docs/design.md#510-drift).
+
+</Steps>
+
+For backups and later upgrades, [read more in the upgrade and backup guide](https://github.com/nulthara/filterhelm/blob/main/docs/upgrade-and-backup.md).

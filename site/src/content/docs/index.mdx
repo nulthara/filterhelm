@@ -1,0 +1,47 @@
+---
+title: FilterHelm
+description: FilterHelm is a self-hosted web app for managing several Pi-hole instances from one place.
+template: splash
+heroScreenshot: drift
+hero:
+  title: Multiple instances. One control plane.
+  tagline: FilterHelm is a self-hosted web app for managing several Pi-hole instances from one place.
+  actions:
+    - text: Get started
+      link: /start/first-run/
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/nulthara/filterhelm
+      variant: secondary
+---
+
+import { LinkCard } from '@astrojs/starlight/components';
+
+## How a change happens
+
+1. Compare your instances on Drift to see which managed entries differ.
+2. Follow the row's **Fix in** link to the page that owns the entry.
+3. Review the change and confirm it for one instance in its dialog.
+
+[Read more about the safety model](/understand/safety-model/).
+
+## Choose your path
+
+<LinkCard title="Start here" description="Install FilterHelm, add two instances, and open Drift." href="/start/first-run/" />
+<LinkCard title="Guides" description="Choose an install method and connect your instances." href="/guides/install-options/" />
+<LinkCard title="Reference" description="Find what each app page does and which Pi-hole versions it supports." href="/reference/pages/" />
+<LinkCard title="Understand" description="See how changes are confirmed and where the safety model ends." href="/understand/safety-model/" />
+
+## What you need
+
+- Pi-hole FTL 6.x.
+- Docker or Podman, or Python 3.11 or newer to run from source.
+- An `amd64` or `arm64` host for the published image.
+
+[Read more about installation](/guides/install-options/).
+
+## Get help
+
+1. Ask a question or report a bug in [GitHub issues](https://github.com/nulthara/filterhelm/issues).
+2. Report vulnerabilities privately using the [security reporting instructions](https://github.com/nulthara/filterhelm/blob/main/SECURITY.md).
+3. Read the [contributing guide](https://github.com/nulthara/filterhelm/blob/main/CONTRIBUTING.md) before sending a change.

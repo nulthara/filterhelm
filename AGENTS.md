@@ -20,6 +20,7 @@ Coding rules for anyone — Claude or Codex — writing code in this repo. The *
   one component per screen.
 - `app/static/ui/` — the committed production build of `frontend/`. Do not hand-edit.
 - `tests/` — pytest, one `test_<module>.py` per backend concern.
+- `site/` — Astro Starlight public documentation, built by Cloudflare; see `docs/site.md`.
 - `docs/` — `design.md` (product rules), `deploy.md`, `plans/` (change records).
 
 ## Backend (Python / FastAPI)
@@ -58,9 +59,14 @@ Coding rules for anyone — Claude or Codex — writing code in this repo. The *
 ## Dependency updates
 
 - Accept only releases public for at least 24 hours. This mitigates hijacked upstreams.
-- npm: `frontend/.npmrc` enforces `min-release-age=1`. Run `npm audit` after any change.
+- npm: `frontend/.npmrc` and `site/.npmrc` enforce `min-release-age=1`. Run `npm audit` after any change.
   Majors need their own plan.
 - Python: edit pins in `requirements.lock` (and `pyproject.toml` for direct deps).
   Install with `--uploaded-prior-to P1D`. Run `pip check` and `pip-audit`. Then run
   `python3 scripts/lock_hashes.py`. Test tools live in `requirements-dev.lock`, refreshed
   with `python3 scripts/lock_hashes.py requirements-dev.lock`. Never hand-edit `--hash` lines.
+
+## Public documentation site
+
+- After any `site/` change: `cd site && npm ci && npm run build`, then run `npm audit`.
+- `site/dist/` is built by Cloudflare, never committed, and never reaches the deploy target.

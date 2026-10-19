@@ -3,6 +3,8 @@
 FilterHelm — local GUI for managing multiple Pi-hole instances.
 FastAPI backend (owns credentials, Pi-hole API access, mutation safety, auditing) +
 React/TypeScript/Vite/Ant Design frontend that talks only to `/api`.
+`site/` holds the separate Astro Starlight public documentation. `site/dist/` is built
+by Cloudflare, never committed, and never reaches the deploy target. See `docs/site.md`.
 
 ## How work happens here
 
@@ -51,6 +53,8 @@ personal user-scope install. Nothing in this repo depends on one.
 ```bash
 ./.venv/bin/pytest                        # backend tests
 cd frontend && npm run build && npm run lint && npm test   # frontend; then commit app/static/ui/
+cd site && npm ci && npm run build       # public docs; do not commit site/dist/
+cd site && npm audit                     # site/.npmrc enforces the 24-hour release age gate
 ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8420   # run locally
 ```
 

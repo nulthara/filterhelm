@@ -191,6 +191,7 @@ explicit, approved plan decision that says so.
    reason (e.g. `/api/auth/status`).
 8. **The compiled frontend is committed** under `app/static/ui/`. The deploy target has no
    Node.js. Any `frontend/` change is incomplete until `npm run build` output is committed.
+   `site/dist/` is built by Cloudflare, never committed, and never reaches the deploy target.
 9. **`main` is production.** Push to `main` auto-deploys via the Gitea runner
    (`.gitea/workflows/deploy.yml`). Work never lands directly on `main`.
 
@@ -199,6 +200,9 @@ Keep this list in sync with `README.md` when the product rules change.
 ---
 
 ## Definition of done
+
+`site/` holds the Astro Starlight public documentation; it is separate from `frontend/`
+and is never served by the app. See `docs/site.md` for build and publishing settings.
 
 The Implementer runs all of these; the Reviewer re-runs them.
 
@@ -209,6 +213,11 @@ The Implementer runs all of these; the Reviewer re-runs them.
 # Frontend (only if frontend/ changed)
 cd frontend && npm run build && npm run lint && npm test
 # then commit the regenerated app/static/ui/ output
+
+# Public documentation (if site/ changed; built separately by Cloudflare)
+cd site && npm ci && npm run build
+# audit dependency changes; site/.npmrc enforces the 24-hour release age gate
+npm audit
 ```
 
 Plus: the plan's Acceptance criteria checklist passes, and the diff is limited to the

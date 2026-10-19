@@ -23,3 +23,8 @@ before_public.md
 
 # Maintainer-only notes
 CLAUDE.local.md
+
+# Public documentation builds on Cloudflare.
+site/node_modules/
+site/dist/
+site/.astro/

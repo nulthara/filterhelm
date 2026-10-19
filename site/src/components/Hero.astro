@@ -1,0 +1,26 @@
+---
+import DefaultHero from "@astrojs/starlight/components/Hero.astro";
+import { LinkButton } from "@astrojs/starlight/components";
+import Screenshot from "./Screenshot.astro";
+
+const { hero, heroScreenshot } = Astro.locals.starlightRoute.entry.data;
+---
+
+{heroScreenshot ? (
+  <section class="fh-hero" aria-labelledby="_top">
+    <div class="fh-hero-copy">
+      <h1 id="_top" data-page-title>{hero?.title}</h1>
+      <p>{hero?.tagline}</p>
+      <div class="fh-hero-actions">
+        {hero?.actions.map((action) => (
+          <LinkButton href={action.link} variant={action.variant}>{action.text}</LinkButton>
+        ))}
+      </div>
+    </div>
+    <Screenshot
+      name={heroScreenshot}
+      alt="Drift comparison across three Pi-hole instances, showing differing DNS records, block lists, and domain overrides."
+      caption="FilterHelm shows the difference before it changes anything. Each Drift row links to the page that owns the entry, where you confirm the change for one instance."
+    />
+  </section>
+) : <DefaultHero {...Astro.props} />}

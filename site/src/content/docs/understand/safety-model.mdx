@@ -1,0 +1,47 @@
+---
+title: How changes stay deliberate
+description: Understand diff before write, one-instance changes, gravity gating, and the limits of those rules.
+type: explanation
+---
+
+import Screenshot from '../../../components/Screenshot.astro';
+
+## Compare before changing
+
+FilterHelm starts with read-only comparisons. Drift shows managed entries that are missing or conflicting across reachable instances. An instance that fails a read is reported as an error and excluded from the comparison. You need at least two reachable instances for a comparison.
+
+Drift does not reconcile entries. Its **Fix in** links open the pages that own them. You choose the entry and review the change there. Returning to Drift reloads the comparison; refresh is explicit.
+
+[Read more about Drift](https://github.com/nulthara/filterhelm/blob/main/docs/plans/0020-drift-dashboard.md).
+
+[Read more about row navigation](https://github.com/nulthara/filterhelm/blob/main/docs/plans/0021-drift-row-links.md).
+
+## Confirm one instance at a time
+
+You see what will change before you confirm a write. Changes add or remove the entries that differ instead of replacing whole record sets. An action aimed at several instances runs on each instance in turn and reports each result.
+
+<Screenshot name="diff-confirm" alt="Confirmation dialog showing the exact proposed change for one Pi-hole instance." />
+
+Sequential changes reduce the chance of taking every resolver down together. They do not make several instances a transaction. Some instances can succeed while another fails. Check the reported results before deciding what to do next.
+
+[Read more about the safety rules](https://github.com/nulthara/filterhelm/blob/main/docs/design.md#4-safety-rules).
+
+## Gravity is a separate action
+
+Adding, copying, enabling, disabling, or removing a block list does not run gravity. A real list change marks that instance as pending. You then choose and confirm **Update gravity**. A failed update leaves the instance pending so you can retry.
+
+FilterHelm has no background scheduler, startup mutation, or timer that reconciles instances. It does not run gravity or restart FTL without an explicit, confirmed action.
+
+[Read more about block lists](https://github.com/nulthara/filterhelm#page-behavior).
+
+## Keep a record and keep backups
+
+The audit log records sign-ins and configuration changes, along with backup downloads and service actions. You can inspect it from the Audit log page. It contains operational details such as usernames, addresses, DNS names, and changed setting values. Passwords and session tokens are excluded.
+
+<Screenshot name="audit-log" alt="Audit log showing a few demo sign-in and configuration-change entries." />
+
+The audit log is a record, not a backup or an undo operation. Protect the data directory and its backups. On hosts without a keyring, stored Pi-hole passwords are not encrypted. DNS filtering and confirmation dialogs are not security guarantees.
+
+[Read more about the audit log](https://github.com/nulthara/filterhelm#audit-log).
+
+[Read more about upgrades and backups](https://github.com/nulthara/filterhelm/blob/main/docs/upgrade-and-backup.md).

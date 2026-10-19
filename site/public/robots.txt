@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://filterhelm.nulthara.com/sitemap-index.xml

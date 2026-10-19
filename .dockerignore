@@ -12,3 +12,5 @@ data
 .superpowers
 .private-denylist.toml
 before_public.md
+
+site

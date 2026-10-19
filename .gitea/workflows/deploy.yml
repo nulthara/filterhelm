@@ -9,6 +9,7 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths-ignore: ["site/**"]
 
 jobs:
   deploy:

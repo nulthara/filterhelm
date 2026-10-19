@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000">
+  <rect width="1600" height="1000" fill="#0B1F3B"/>
+  <rect x="32" y="32" width="1536" height="936" rx="10" fill="none" stroke="#1E88FF" stroke-width="4"/>
+  <text x="800" y="400" fill="#E6F4FF" font-family="system-ui, sans-serif" font-size="56" text-anchor="middle">query</text>
+  <text x="800" y="460" fill="#E6F4FF" font-family="system-ui, sans-serif" font-size="40" text-anchor="middle">
+    <tspan x="800" dy="60">Merged query log</tspan>
+  </text>
+</svg>
