@@ -10,6 +10,8 @@ const codeTheme = (name, type) => ({
     "editor.foreground": "#E6F4FF",
     "terminal.background": "#0B1F3B",
     "terminal.foreground": "#E6F4FF",
+    "scrollbarSlider.background": "#496783",
+    "scrollbarSlider.hoverBackground": "#B5CBE0",
   },
   tokenColors: [
     { scope: ["comment"], settings: { foreground: "#B5CBE0" } },
@@ -26,9 +28,8 @@ export default defineConfig({
       title: "FilterHelm",
       description: "FilterHelm is a self-hosted web app for managing several Pi-hole instances from one place.",
       logo: {
-        light: "./src/assets/filterhelm-horizontal-light.svg",
-        dark: "./src/assets/filterhelm-horizontal-dark.svg",
-        replacesTitle: true,
+        src: "./src/assets/filterhelm-icon-compact.svg",
+        replacesTitle: false,
       },
       favicon: "/favicon.svg",
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/nulthara/filterhelm" }],

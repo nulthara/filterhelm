@@ -19,6 +19,7 @@ const { hero, heroScreenshot } = Astro.locals.starlightRoute.entry.data;
     </div>
     <Screenshot
       name={heroScreenshot}
+      eager
       alt="Drift comparison across three Pi-hole instances, showing differing DNS records, block lists, and domain overrides."
       caption="FilterHelm shows the difference before it changes anything. Each Drift row links to the page that owns the entry, where you confirm the change for one instance."
     />

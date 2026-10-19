@@ -41,11 +41,10 @@ def test_frontend_tokens_match_brand_kit() -> None:
 
 
 def test_site_assets_match_brand_kit() -> None:
-    for theme in ("light", "dark"):
-        name = f"filterhelm-horizontal-{theme}.svg"
-        assert (ROOT / "site/src/assets" / name).read_bytes() == (
-            ROOT / "branding/logos" / name
-        ).read_bytes()
+    assert (ROOT / "site/src/assets/filterhelm-icon-compact.svg").read_bytes() == (
+        ROOT / "branding/logos/filterhelm-icon-compact.svg"
+    ).read_bytes()
+    assert not list((ROOT / "site").rglob("filterhelm-horizontal-*"))
     assert (ROOT / "site/public/favicon.svg").read_bytes() == (
         ROOT / "branding/logos/filterhelm-icon-compact.svg"
     ).read_bytes()
