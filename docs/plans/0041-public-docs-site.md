@@ -192,7 +192,7 @@ Created:
 - `site/src/components/Footer.astro` — `Footer` override
 - `site/src/components/Screenshot.astro` — slot-based screenshot figure
 - `site/src/styles/theme.css` — brand mapping, fonts, both themes
-- `site/src/assets/filterhelm-horizontal-light.svg`, `site/src/assets/filterhelm-horizontal-dark.svg` — brand logo copies
+- `site/src/assets/filterhelm-icon-compact.svg` — brand icon copy for the header logo
 - `site/src/assets/screenshots/<slot>.svg` — eight placeholders
 - `site/public/favicon.svg`, `site/public/favicon-32.png` — brand icon copies
 - `site/public/_headers`, `site/public/robots.txt`
@@ -231,7 +231,7 @@ The Codex sandbox needs network access for `npm install`. If it has none, stop a
 4. **Config.** In `astro.config.mjs` set the following.
    - `site: "https://filterhelm.nulthara.com"`
    - `title: "FilterHelm"` and a `description` from the landing sentence
-   - `logo` with `light` and `dark` SVG copies and `replacesTitle: true`
+   - `logo: { src: "./src/assets/filterhelm-icon-compact.svg", replacesTitle: false }`, so the header shows the icon beside the "FilterHelm" title text. The horizontal wordmarks carry a solid background and an embedded tagline that is illegible at header size, which the brand guidelines forbid.
    - `favicon: "/favicon.svg"`
    - one `social` GitHub link to `https://github.com/nulthara/filterhelm`
    - `customCss: ["@fontsource-variable/inter", "./src/styles/theme.css"]`
@@ -239,7 +239,7 @@ The Codex sandbox needs network access for `npm install`. If it has none, stop a
    - `sidebar` with the four groups from the content map, one level deep
    - `expressiveCode` themes and `styleOverrides` per the visual direction
    - `lastUpdated` off and `editLink` unset
-5. **Assets.** Copy the logos and favicon files byte-for-byte. Create the eight placeholder
+5. **Assets.** Copy the compact icon and favicon files byte-for-byte. Create the eight placeholder
    SVGs. Each contains only the slot name and its "Should show" text, has a 1600 × 1000
    viewBox, and uses brand colors. Add `_headers` and `robots.txt`.
 6. **Theme.** Write `theme.css`. Dark values go on `:root` and light values under
@@ -355,7 +355,7 @@ In `tests/test_site.py` unless noted. None of them runs Node.
 - `test_site_copy_avoids_banned_phrases` — page files contain none of the Step 8 banned words (case-insensitive) and no emoji.
 - `test_site_has_no_email_addresses` — files under `site/src`, `site/public`, `astro.config.mjs`, and `package.json` contain no `mailto:` and no address-shaped string.
 - `tests/test_supply_chain.py::test_npmrc_sets_min_release_age` — parametrized over both `.npmrc` files.
-- `tests/test_branding.py::test_site_assets_match_brand_kit` — logos, favicon SVG, and 32 px PNG are byte-identical to `branding/`.
+- `tests/test_branding.py::test_site_assets_match_brand_kit` — the header icon, favicon SVG, and 32 px PNG are byte-identical to `branding/`, and no horizontal wordmark copy exists under `site/`.
 - `tests/test_repo_hygiene.py` — unchanged tests now also scan `site/`.
 
 ## Invariants at risk
