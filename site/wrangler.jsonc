@@ -1,0 +1,10 @@
+// Static-only Worker. Cloudflare Workers Builds runs `npm ci && npm run build`,
+// then deploys ./dist. The name must match the Worker in the Cloudflare dashboard.
+{
+  "name": "filterhelm-site",
+  "compatibility_date": "2026-10-21",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}

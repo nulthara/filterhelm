@@ -69,36 +69,42 @@ Review both themes and the 375 px layout after replacing a shot.
 
 ## Cloudflare inputs
 
-Use Git integration with the GitHub mirror. No Cloudflare token belongs in the
-repository or on the Gitea runner. Publishing happens only through
-`git push github main` after the required denylist pytest has passed.
+The site deploys as a static-only Cloudflare Worker through Workers Builds, connected
+to the GitHub mirror. `site/wrangler.jsonc` names the Worker and points it at `dist`.
+No Cloudflare token belongs in the repository or on the Gitea runner. Publishing
+happens only through `git push github main` after the required denylist pytest has
+passed.
 
-| Input | Value |
+| Setting | Value |
 | --- | --- |
 | Repository | `nulthara/filterhelm` (GitHub) |
+| Worker name | `filterhelm-site` (must match `name` in `site/wrangler.jsonc`) |
 | Production branch | `main` |
 | Root directory | `site` |
 | Build command | `npm ci && npm run build` |
-| Output directory | `dist` |
-| Environment variable | `NODE_VERSION=22` |
+| Deploy command | `npx wrangler deploy` (the default) |
+| Build variable | `NODE_VERSION=22` |
 | Build watch paths | include `site/*` |
-| Preview branches | none |
+| Non-production branch builds | off |
+
+`wrangler.jsonc` sets `not_found_handling` to `404-page`, so unknown paths return
+Starlight's `404.html` with a `404` status. Workers static assets read
+`site/public/_headers` the same way Pages does.
 
 ## Manual setup and publishing
 
 1. Merge on the forge after an Accept verdict.
 2. Run `FILTERHELM_REQUIRE_DENYLIST=1 ./.venv/bin/pytest`, then `git push github main`.
-3. In Cloudflare, open Workers & Pages, create a project from Git, and authorize the
-   GitHub app for `nulthara/filterhelm` only.
-4. Enter the inputs above. For a Workers project, first add the contingency
-   `wrangler.jsonc` below in a follow-up commit.
+3. In Cloudflare, open Workers & Pages, create a Worker, and choose to import a
+   repository. Authorize the Cloudflare GitHub app for `nulthara/filterhelm` only.
+4. Name the Worker `filterhelm-site` and enter the settings above.
 5. Leave Web Analytics off.
-6. Check the first build on its `*.pages.dev` or `*.workers.dev` URL.
-7. Add the custom domain `filterhelm.nulthara.com` in the project. The zone is in the
-   same account, so Cloudflare creates the DNS record and certificate. Do not create
-   the record first.
+6. Check the first build on its `*.workers.dev` URL.
+7. In the Worker's Settings, open Domains & Routes and add the custom domain
+   `filterhelm.nulthara.com`. The zone is in the same account, so Cloudflare creates
+   the DNS record and certificate. Do not create the record first.
 8. Check `curl -sI https://filterhelm.nulthara.com` returns `200` with the `_headers`
-   values.
+   values, and that `curl -sI https://filterhelm.nulthara.com/no-such-page/` returns `404`.
 
 `site/public/_headers` sets MIME-sniffing, referrer, frame, and permissions headers,
 plus immutable caching for `/_astro/*`. There is no strict CSP because Starlight
@@ -116,24 +122,3 @@ Scan the HTML pages, `sitemap*.xml`, and site CSS in `dist/` for email addresses
 and every `.private-denylist.toml` pattern. Vendor JavaScript bundles are exempt
 from that scan. Check separately that the generated site loads no script or
 stylesheet from another origin.
-
-## Workers contingency
-
-Do not add this file for a Pages project. Pages would read it too. If you choose a
-Workers project, add `site/wrangler.jsonc` in a follow-up commit before connecting
-it, using this exact configuration.
-
-```jsonc
-{
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "filterhelm-site",
-  "compatibility_date": "2026-10-18",
-  "assets": {
-    "directory": "./dist"
-  }
-}
-```
-
-Keep the same root, build command, output directory, and Node version. The dashboard
-owns the Git integration and custom domain. Do not add a Wrangler deploy step to
-the Gitea runner.
