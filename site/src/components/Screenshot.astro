@@ -19,8 +19,6 @@ if (!source) throw new Error(`Missing screenshot slot: ${name}`);
   <Image
     src={source.default}
     alt={alt}
-    width={1600}
-    height={1000}
     loading={eager ? "eager" : "lazy"}
     fetchpriority={eager ? "high" : undefined}
   />
