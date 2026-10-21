@@ -41,7 +41,7 @@ The build fails if neither file exists.
 
 | Slot | Used on | Should show |
 | --- | --- | --- |
-| `drift` | Landing hero | Drift page with three instances and a few differing DNS, block-list, and domain entries |
+| `drift` | Landing hero | Drift page with two instances and a few differing DNS and domain entries |
 | `first-run-instances` | Tutorial | Instances page with two healthy instances |
 | `add-instance` | Manage instances | Add-instance form filled with demo values, connection test passed |
 | `diff-confirm` | Safety model | The confirmation dialog showing the exact change for one instance |
