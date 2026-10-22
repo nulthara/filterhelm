@@ -32,7 +32,11 @@ and `postcss-nested` 6.2.0; no patched parser 6.x exists. Remove the override on
 `@expressive-code/core` depends on `postcss-nested` 8 or later, then reinstall,
 build, and require `npm audit` to report 0 vulnerabilities.
 
+The 375 px menu tab depends on Starlight class names; recheck it after any Starlight upgrade.
+
 ## Screenshots
+
+Readers can click or tap a screenshot to enlarge it.
 
 Each slot lives in `site/src/assets/screenshots/`. The `Screenshot` component prefers
 `<slot>.png` and otherwise uses `<slot>.svg`. Drop in a PNG with the same name to

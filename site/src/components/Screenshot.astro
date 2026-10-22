@@ -1,5 +1,5 @@
 ---
-import { Image } from "astro:assets";
+import { Image, getImage } from "astro:assets";
 import type { ImageMetadata } from "astro";
 
 interface Props {
@@ -13,14 +13,38 @@ const { name, alt, caption, eager = false } = Astro.props;
 const images = import.meta.glob<{ default: ImageMetadata }>("../assets/screenshots/*.{png,svg}", { eager: true });
 const source = images[`../assets/screenshots/${name}.png`] ?? images[`../assets/screenshots/${name}.svg`];
 if (!source) throw new Error(`Missing screenshot slot: ${name}`);
+const full = await getImage({ src: source.default });
 ---
 
 <figure class="fh-shot">
-  <Image
-    src={source.default}
-    alt={alt}
-    loading={eager ? "eager" : "lazy"}
-    fetchpriority={eager ? "high" : undefined}
-  />
+  <a class="fh-shot-zoom" href={full.src} aria-label={`Enlarge screenshot: ${alt}`}>
+    <Image
+      src={source.default}
+      alt={alt}
+      loading={eager ? "eager" : "lazy"}
+      fetchpriority={eager ? "high" : undefined}
+    />
+  </a>
+  <dialog class="fh-lightbox" aria-label={alt}>
+    <img src={full.src} alt="" loading="lazy" decoding="async" />
+    <div class="fh-lightbox-controls">
+      <a href={full.src} target="_blank" rel="noopener">Open full size</a>
+      <form method="dialog"><button>Close</button></form>
+    </div>
+  </dialog>
   {caption && <figcaption>{caption}</figcaption>}
 </figure>
+
+<script>
+  document.querySelectorAll<HTMLAnchorElement>('.fh-shot-zoom').forEach((anchor) => {
+    const dialog = anchor.nextElementSibling;
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    anchor.addEventListener('click', (event) => {
+      event.preventDefault();
+      dialog.showModal();
+    });
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+  });
+</script>

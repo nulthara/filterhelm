@@ -150,3 +150,22 @@ def test_site_selector_parser_override_pinned() -> None:
     assert tuple(map(int, version.split("."))) >= (7, 1, 6)
     lock = json.loads((SITE / "package-lock.json").read_text())
     assert lock["packages"]["node_modules/postcss-selector-parser"]["version"] == version
+
+
+def test_screenshot_lightbox_markup() -> None:
+    source = (SITE / "src/components/Screenshot.astro").read_text()
+    for expected in ('getImage', 'class="fh-shot-zoom"', '<dialog', 'showModal', 'method="dialog"', 'aria-label'):
+        assert expected in source
+    assert 'onclick=' not in source
+
+
+def test_mobile_menu_tab_css() -> None:
+    source = (SITE / "src/styles/theme.css").read_text()
+    block = source.split('@media (max-width: 49.9375rem)', 1)[1]
+    button = re.search(r'\.sl-menu-button\s*\{([^}]+)\}', block)
+    assert button
+    assert 'inset-inline-start: 0' in button[1]
+    assert 'top: 50%' in button[1]
+    drawer = re.search(r'\.sidebar-pane\s*\{([^}]+)\}', block)
+    assert drawer and 'width: min(20rem, 85vw)' in drawer[1]
+    assert '.sidebar-pane::backdrop' in block

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { DeleteOutlined, DownOutlined, DownloadOutlined, EditOutlined, PlusOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons'
 import {
-  Alert, App, Badge, Button, Descriptions, Dropdown, Empty, Flex, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography,
+  Alert, App, Badge, Button, Descriptions, Dropdown, Empty, Flex, Form, Grid, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import type { DescriptionsProps, TableProps } from 'antd'
 import { api, type Download, type FtlAction, type HealthStatus, type Instance, type InstanceHealth, type InstanceInput } from '../api'
@@ -130,6 +130,8 @@ function HealthDetails({ health }: HealthDetailsProps) {
 
 export default function InstancesPage() {
   const { message, modal } = App.useApp()
+  const { md } = Grid.useBreakpoint()
+  const compact = md === false
   const [instances, setInstances] = useState<Instance[]>([])
   const [expandOverrides, setExpandOverrides] = useState<Map<string, boolean>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -317,21 +319,31 @@ export default function InstancesPage() {
     },
     {
       title: 'Actions', key: 'actions', align: 'right', render: (_, item) => (
-        <Space>
-          <Button icon={<ReloadOutlined />} loading={testing === item.name} onClick={() => void test(item.name)}>Test</Button>
+        <Space size={compact ? 4 : 8}>
+          {compact ? (
+            <Tooltip title="Test">
+              <Button icon={<ReloadOutlined />} aria-label={`Test ${item.name}`} loading={testing === item.name} onClick={() => void test(item.name)} />
+            </Tooltip>
+          ) : <Button icon={<ReloadOutlined />} loading={testing === item.name} onClick={() => void test(item.name)}>Test</Button>}
           <Tooltip title="Download a Teleporter archive of this Pi-hole's configuration. It may include password hashes, so store it privately.">
-            <Button icon={<DownloadOutlined />} loading={backingUp === item.name} onClick={() => void backup(item.name)}>Backup</Button>
+            <Button icon={<DownloadOutlined />} aria-label={`Back up ${item.name}`} loading={backingUp === item.name} onClick={() => void backup(item.name)}>{compact ? null : 'Backup'}</Button>
           </Tooltip>
-          <Dropdown
-            disabled={actionRunning !== undefined}
-            menu={{ items: ftlActionItems, onClick: ({ key }) => void runAction(item.name, key as FtlAction) }}
-          >
-            <Button icon={<ToolOutlined />} loading={actionRunning === item.name}
-              disabled={actionRunning !== undefined && actionRunning !== item.name}>
-              Service <DownOutlined />
-            </Button>
-          </Dropdown>
-          <Button icon={<EditOutlined />} onClick={() => openEdit(item)}>Edit</Button>
+          <Tooltip title={compact ? 'Service' : undefined}>
+            <Dropdown
+              disabled={actionRunning !== undefined}
+              menu={{ items: ftlActionItems, onClick: ({ key }) => void runAction(item.name, key as FtlAction) }}
+            >
+              <Button icon={<ToolOutlined />} aria-label={`Service actions for ${item.name}`} loading={actionRunning === item.name}
+                disabled={actionRunning !== undefined && actionRunning !== item.name}>
+                {compact ? null : 'Service '}<DownOutlined />
+              </Button>
+            </Dropdown>
+          </Tooltip>
+          {compact ? (
+            <Tooltip title="Edit">
+              <Button icon={<EditOutlined />} aria-label={`Edit ${item.name}`} onClick={() => openEdit(item)} />
+            </Tooltip>
+          ) : <Button icon={<EditOutlined />} onClick={() => openEdit(item)}>Edit</Button>}
           <Popconfirm
             title={`Remove ${item.name}?`}
             description="This only forgets the instance locally."
@@ -359,6 +371,7 @@ export default function InstancesPage() {
         </Space>
       </div>
       <Table
+        scroll={{ x: 'max-content' }}
         rowKey="name"
         columns={columns}
         dataSource={instances}

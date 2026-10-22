@@ -125,3 +125,75 @@
   color: #E6F4FF;
   scrollbar-color: var(--ec-sbThumbCol) transparent;
 }
+
+/* Starlight 0.42.6: relies on .sl-menu-button, .sidebar-pane, .header, and .main-frame. */
+@media (max-width: 49.9375rem) {
+  :root { --fh-menu-tab-width: 1.5rem; }
+  .sl-menu-button {
+    position: fixed;
+    padding: 0;
+    inset-inline-start: 0;
+    inset-inline-end: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    width: var(--fh-menu-tab-width);
+    height: 4rem;
+    border-radius: 0 6px 6px 0;
+    background: var(--fh-button-bg);
+    color: var(--fh-button-text);
+  }
+  .sl-menu-button:focus-visible {
+    outline: 2px solid var(--sl-color-accent-high);
+    outline-offset: 2px;
+  }
+  .sidebar-pane {
+    position: fixed;
+    inset-inline: 0 auto;
+    inset-block: var(--sl-nav-height) 0;
+    width: min(20rem, 85vw);
+    border-inline-end: 1px solid var(--sl-color-gray-4);
+    background: var(--sl-color-bg-sidebar);
+  }
+  .sidebar-pane::backdrop { background: rgb(11 31 59 / 0.6); }
+  [data-has-sidebar] .header { padding-inline-end: var(--sl-nav-pad-x); }
+  [data-has-sidebar] .main-frame { padding-inline-start: calc(var(--sl-content-inline-start, 0rem) + var(--fh-menu-tab-width)); }
+}
+
+.fh-shot-zoom { display: block; cursor: zoom-in; }
+.fh-shot-zoom:focus-visible {
+  outline: 2px solid var(--sl-color-accent-high);
+  outline-offset: 4px;
+}
+.fh-lightbox {
+  border: 0;
+  background: transparent;
+  max-width: 100vw;
+  max-height: 100dvh;
+  padding: 1rem;
+  margin: auto;
+}
+.fh-lightbox::backdrop { background: rgb(11 31 59 / 0.6); }
+.fh-lightbox img {
+  max-width: 100%;
+  max-height: calc(100dvh - 5rem);
+  object-fit: contain;
+}
+.fh-lightbox-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem;
+  background: var(--sl-color-bg-sidebar);
+  color: var(--sl-color-text);
+}
+.fh-lightbox-controls a { color: var(--fh-link); }
+.fh-lightbox-controls form { margin: 0; }
+.fh-lightbox-controls button {
+  background: var(--fh-button-bg);
+  color: var(--fh-button-text);
+  border: 0;
+  border-radius: 6px;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+}
