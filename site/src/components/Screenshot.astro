@@ -26,7 +26,7 @@ const full = await getImage({ src: source.default });
     />
   </a>
   <dialog class="fh-lightbox" aria-label={alt}>
-    <img src={full.src} alt="" loading="lazy" decoding="async" />
+    <img {...full.attributes} src={full.src} alt="" loading="lazy" decoding="async" />
     <div class="fh-lightbox-controls">
       <a href={full.src} target="_blank" rel="noopener">Open full size</a>
       <form method="dialog"><button>Close</button></form>

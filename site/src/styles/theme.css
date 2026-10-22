@@ -130,6 +130,8 @@
 @media (max-width: 49.9375rem) {
   :root { --fh-menu-tab-width: 1.5rem; }
   .sl-menu-button {
+    align-items: center;
+    justify-content: center;
     position: fixed;
     padding: 0;
     inset-inline-start: 0;
@@ -137,7 +139,7 @@
     top: 50%;
     transform: translateY(-50%);
     width: var(--fh-menu-tab-width);
-    height: 4rem;
+    height: 3rem;
     border-radius: 0 6px 6px 0;
     background: var(--fh-button-bg);
     color: var(--fh-button-text);

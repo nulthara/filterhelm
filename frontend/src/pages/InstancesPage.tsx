@@ -326,7 +326,7 @@ export default function InstancesPage() {
             </Tooltip>
           ) : <Button icon={<ReloadOutlined />} loading={testing === item.name} onClick={() => void test(item.name)}>Test</Button>}
           <Tooltip title="Download a Teleporter archive of this Pi-hole's configuration. It may include password hashes, so store it privately.">
-            <Button icon={<DownloadOutlined />} aria-label={`Back up ${item.name}`} loading={backingUp === item.name} onClick={() => void backup(item.name)}>{compact ? null : 'Backup'}</Button>
+            <Button icon={<DownloadOutlined />} aria-label={`Backup ${item.name}`} loading={backingUp === item.name} onClick={() => void backup(item.name)}>{compact ? null : 'Backup'}</Button>
           </Tooltip>
           <Tooltip title={compact ? 'Service' : undefined}>
             <Dropdown

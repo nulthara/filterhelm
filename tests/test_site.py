@@ -154,7 +154,7 @@ def test_site_selector_parser_override_pinned() -> None:
 
 def test_screenshot_lightbox_markup() -> None:
     source = (SITE / "src/components/Screenshot.astro").read_text()
-    for expected in ('getImage', 'class="fh-shot-zoom"', '<dialog', 'showModal', 'method="dialog"', 'aria-label'):
+    for expected in ('getImage', 'full.attributes', 'class="fh-shot-zoom"', '<dialog', 'showModal', 'method="dialog"', 'aria-label'):
         assert expected in source
     assert 'onclick=' not in source
 

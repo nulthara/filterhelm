@@ -63,5 +63,5 @@ def test_page_tables_scroll_horizontally() -> None:
 def test_instances_actions_have_accessible_names() -> None:
     source = (PAGES / "InstancesPage.tsx").read_text()
     assert "Grid.useBreakpoint()" in source
-    for label in ("Test", "Back up", "Edit", "Service actions for"):
+    for label in ("Test", "Backup", "Edit", "Service actions for"):
         assert f'aria-label={{`{label} ${{item.name}}`}}' in source
