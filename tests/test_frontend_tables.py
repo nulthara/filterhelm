@@ -65,3 +65,17 @@ def test_instances_actions_have_accessible_names() -> None:
     assert "Grid.useBreakpoint()" in source
     for label in ("Test", "Backup", "Edit", "Service actions for"):
         assert f'aria-label={{`{label} ${{item.name}}`}}' in source
+
+
+def test_instances_health_panel_uses_visible_width() -> None:
+    source = (PAGES / "InstancesPage.tsx").read_text()
+    assert 'className="instances-table"' in source
+    assert 'className="health-details"' in source
+    styles = (PAGES.parent / "styles.css").read_text()
+    container = re.search(r"\.instances-table \.ant-table-container\s*\{([^}]*)\}", styles)
+    assert container is not None
+    assert "container-type: inline-size" in container.group(1)
+    panel = re.search(r"\.health-details\s*\{([^}]*)\}", styles)
+    assert panel is not None
+    assert "position: sticky" in panel.group(1)
+    assert "100cqi" in panel.group(1)

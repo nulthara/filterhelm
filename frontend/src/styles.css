@@ -46,6 +46,14 @@ body { margin: 0; min-width: 320px; }
 .dns-search { width: min(420px, 100%); }
 .status-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
 
+/* The panel takes the visible table width so its nested Descriptions table cannot widen the max-content table. */
+.instances-table .ant-table-container { container-type: inline-size; }
+.health-details {
+  position: sticky;
+  inset-inline-start: var(--ant-table-cell-padding-inline, 16px);
+  width: calc(100cqi - 2 * var(--ant-table-cell-padding-inline, 16px));
+}
+
 .bulk-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; padding: 8px 12px; border-radius: 8px; background: var(--fh-highlight); }
 
 .query-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 8px; }

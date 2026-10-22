@@ -118,7 +118,7 @@ function HealthDetails({ health }: HealthDetailsProps) {
     { key: 'sqlite', label: 'SQLite', children: database.sqlite_version },
   ]
   return (
-    <Flex vertical gap="middle">
+    <Flex vertical gap="middle" className="health-details">
       {health.reasons.length > 0 && (
         <Alert type={health.status === 'critical' ? 'error' : 'warning'} showIcon
           message={health.reasons.join('; ')} />
@@ -375,6 +375,7 @@ export default function InstancesPage({ initialAddOpen = false }: InstancesPageP
         </Space>
       </div>
       <Table
+        className="instances-table"
         scroll={{ x: 'max-content' }}
         rowKey="name"
         columns={columns}
