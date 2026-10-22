@@ -1,6 +1,6 @@
 # 0043 — First-instance onboarding prompt and Vite 7.3.7
 
-Status: in-progress           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped           <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0043-first-instance-onboarding
 Author: Kyrnveil
 Date: 2026-10-22
