@@ -10,7 +10,7 @@ import Screenshot from '../../../components/Screenshot.astro';
 
 Use an app password for each Pi-hole instance. Keep it on the server; do not include it in the URL or in screenshots. FilterHelm uses the Pi-hole FTL 6.x REST API.
 
-Open **Instances** and add an instance. Enter a display name, the base URL, and the app password. Use a bare HTTP or HTTPS origin for the base URL. Leave out paths, query strings, fragments, and embedded credentials.
+Open **Instances** and add an instance. On a fresh install with no instances, FilterHelm offers to open this form for you after you sign in. Enter a display name, the base URL, and the app password. Use a bare HTTP or HTTPS origin for the base URL. Leave out paths, query strings, fragments, and embedded credentials.
 
 Test the connection before saving. A failed test means you should check the origin, network access, and app password before continuing. After saving, check the instance's reachability and health. Repeat for each instance you want to compare.
 

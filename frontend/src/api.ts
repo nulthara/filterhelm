@@ -2,6 +2,10 @@ export interface VersionInfo {
   version: string
 }
 
+export interface InstanceCount {
+  count: number
+}
+
 export type FtlAction = 'restart_dns' | 'flush_logs' | 'flush_network'
 
 export interface FtlActionResult {
@@ -598,6 +602,7 @@ export const api = {
   login: (username: string, password: string) =>
     request<{ user: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  instanceCount: (signal?: AbortSignal) => request<InstanceCount>('/api/instances/count', { signal }),
   listInstances: (options?: { health?: boolean }) =>
     request<{ instances: Instance[] }>(options?.health ? '/api/instances?health=true' : '/api/instances'),
   saveInstance: (input: InstanceInput) =>

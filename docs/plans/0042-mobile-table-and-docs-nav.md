@@ -1,6 +1,6 @@
 # 0042 — Mobile-friendly Instances table, docs menu tab, and screenshot zoom
 
-Status: in-progress           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped           <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0042-mobile-table-and-docs-nav
 Author: Kyrnveil
 Date: 2026-10-21

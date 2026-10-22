@@ -83,6 +83,10 @@ class VersionInfo(BaseModel):
     version: str
 
 
+class InstanceCount(BaseModel):
+    count: int
+
+
 @router.get("/version", response_model=VersionInfo)
 def version() -> VersionInfo:
     return VersionInfo(version=__version__)
@@ -650,6 +654,11 @@ def _parse_dns_hosts(tree: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
     return records
+
+
+@router.get("/instances/count", response_model=InstanceCount)
+def instances_count() -> InstanceCount:
+    return InstanceCount(count=len(load_instances()))
 
 
 @router.get("/instances")

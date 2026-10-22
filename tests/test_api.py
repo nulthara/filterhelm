@@ -2763,3 +2763,37 @@ def test_settings_apply_rejected_patch_is_502_and_not_audited(monkeypatch):
 def test_settings_apply_transport_failure_is_503_and_not_audited(monkeypatch):
     _assert_settings_patch_failure(monkeypatch, httpx.ConnectError("boom"),
                                    503, "Unable to reach Pi-hole instance")
+
+
+def test_instances_count_reports_configured_instances(monkeypatch):
+    setup_api(monkeypatch)
+    assert api.instances_count().count == 1
+
+    api.instance_save(api.InstanceInput(name="pihole2", base_url="http://pihole2", app_password="secret2"))
+
+    assert api.instances_count().count == 2
+
+
+def test_instances_count_is_zero_without_instances(monkeypatch):
+    monkeypatch.setattr(api, "load_instances", lambda: [])
+
+    assert api.instances_count().count == 0
+
+
+def test_instances_count_does_not_contact_pihole(monkeypatch):
+    setup_api(monkeypatch)
+
+    class UnexpectedPiholeClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("Instance count must not contact Pi-hole")
+
+    monkeypatch.setattr(api, "PiholeClient", UnexpectedPiholeClient)
+
+    assert api.instances_count().count == 1
+
+
+def test_instances_count_route_is_registered():
+    assert any(
+        getattr(route, "path", None) == "/api/instances/count" and "GET" in route.methods
+        for route in api.router.routes
+    )

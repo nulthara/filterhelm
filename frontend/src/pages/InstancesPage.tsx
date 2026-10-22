@@ -128,14 +128,18 @@ function HealthDetails({ health }: HealthDetailsProps) {
   )
 }
 
-export default function InstancesPage() {
+interface InstancesPageProps {
+  initialAddOpen?: boolean
+}
+
+export default function InstancesPage({ initialAddOpen = false }: InstancesPageProps) {
   const { message, modal } = App.useApp()
   const { md } = Grid.useBreakpoint()
   const compact = md === false
   const [instances, setInstances] = useState<Instance[]>([])
   const [expandOverrides, setExpandOverrides] = useState<Map<string, boolean>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [modalOpen, setModalOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(initialAddOpen)
   const [editing, setEditing] = useState<Instance>()
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState<string>()

@@ -244,3 +244,7 @@ def test_version_route_requires_authentication(tmp_path) -> None:
     manager = local_manager(tmp_path)
 
     assert middleware_status(manager, "/api/version") == 401
+
+
+def test_instance_count_route_requires_authentication(tmp_path) -> None:
+    assert middleware_status(local_manager(tmp_path), "/api/instances/count") == 401

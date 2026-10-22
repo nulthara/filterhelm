@@ -21,8 +21,10 @@ import { releaseUrl } from './release'
 const { Header, Sider, Content } = Layout
 
 export default function App() {
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const [page, setPage] = useState('status')
+  const [pendingAdd, setPendingAdd] = useState(false)
+  const [addRequest, setAddRequest] = useState(0)
   const [dnsTab, setDnsTab] = useState<DNSTab>('hosts')
   const [auth, setAuth] = useState<AuthStatus>()
   const [version, setVersion] = useState<string>()
@@ -30,7 +32,8 @@ export default function App() {
   const [loggingIn, setLoggingIn] = useState(false)
   const [loginForm] = Form.useForm<{ username: string; password: string }>()
 
-  const openFromDrift = (target: DriftTarget) => { setDnsTab(target.dnsTab ?? 'hosts'); setPage(target.page) }
+  const navigate = (key: string) => { setDnsTab('hosts'); setPendingAdd(false); setPage(key) }
+  const openFromDrift = (target: DriftTarget) => { setDnsTab(target.dnsTab ?? 'hosts'); setPendingAdd(false); setPage(target.page) }
 
   const refreshAuth = () => api.authStatus().then(setAuth).catch((error) => setAuthError(error instanceof Error ? error.message : 'Unable to check authentication'))
   useEffect(() => { void refreshAuth() }, [])
@@ -41,6 +44,23 @@ export default function App() {
     void api.version(controller.signal).then((info) => setVersion(info.version)).catch(() => {})
     return () => controller.abort()
   }, [auth?.authenticated])
+
+  useEffect(() => {
+    if (!auth?.authenticated) return
+    const controller = new AbortController()
+    void api.instanceCount(controller.signal).then(({ count }) => {
+      if (count === 0 && !controller.signal.aborted) {
+        modal.confirm({
+          title: 'Set up your first Pi-hole',
+          content: 'It looks like you need to set up your first Pi-hole instance. Would you like to do that now?',
+          okText: 'Set up instance',
+          cancelText: 'Not now',
+          onOk: () => { setPage('instances'); setPendingAdd(true); setAddRequest((count) => count + 1) },
+        })
+      }
+    }).catch(() => {})
+    return () => controller.abort()
+  }, [auth?.authenticated, modal])
 
   const sessionExpiredHandling = useRef(false)
   useEffect(() => api.onSessionExpired(() => {
@@ -123,7 +143,7 @@ export default function App() {
             theme="dark"
             mode="inline"
             selectedKeys={[page]}
-            onClick={({ key }) => { setDnsTab('hosts'); setPage(key) }}
+            onClick={({ key }) => navigate(key)}
             items={[
               { key: 'status', icon: <DashboardOutlined />, label: 'Status' },
               { key: 'queries', icon: <HistoryOutlined />, label: 'Queries' },
@@ -141,7 +161,7 @@ export default function App() {
           />
         </Sider>
         <Content className="app-content">
-          {page === 'status' ? <StatusPage /> : page === 'queries' ? <QueriesPage /> : page === 'drift' ? <DriftPage onNavigate={openFromDrift} /> : page === 'instances' ? <InstancesPage /> : page === 'dns' ? <DNSPage key={dnsTab} initialTab={dnsTab} /> : page === 'domains' ? <DomainsPage /> : page === 'lookup' ? <LookupPage /> : page === 'adlists' ? <AdlistsPage /> : page === 'groups' ? <GroupsPage /> : page === 'clients' ? <ClientsPage /> : page === 'audit' ? <AuditPage /> : <SettingsPage />}
+          {page === 'status' ? <StatusPage /> : page === 'queries' ? <QueriesPage /> : page === 'drift' ? <DriftPage onNavigate={openFromDrift} /> : page === 'instances' ? <InstancesPage key={addRequest} initialAddOpen={pendingAdd} /> : page === 'dns' ? <DNSPage key={dnsTab} initialTab={dnsTab} /> : page === 'domains' ? <DomainsPage /> : page === 'lookup' ? <LookupPage /> : page === 'adlists' ? <AdlistsPage /> : page === 'groups' ? <GroupsPage /> : page === 'clients' ? <ClientsPage /> : page === 'audit' ? <AuditPage /> : <SettingsPage />}
         </Content>
       </Layout>
     </Layout>
