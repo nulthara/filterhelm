@@ -19,7 +19,7 @@ docker compose -f compose.ghcr.yaml up -d
 docker compose -f compose.ghcr.yaml exec filterhelm python -m app.auth set-password --username admin
 ```
 
-The sample uses `ghcr.io/nulthara/filterhelm:latest`. Pin a version tag such as `0.2.1` for anything long-lived. If you rename the file to `compose.yaml`, you can drop `-f compose.ghcr.yaml` from the commands.
+The sample uses `ghcr.io/nulthara/filterhelm:latest`. Pin a version tag such as `1.0.0` for anything long-lived, or use `1` to follow 1.x releases. If you rename the file to `compose.yaml`, you can drop `-f compose.ghcr.yaml` from the commands.
 
 [Read more in the Compose sample](https://github.com/nulthara/filterhelm/blob/main/compose.ghcr.yaml).
 

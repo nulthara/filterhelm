@@ -301,8 +301,8 @@ git push github vX.Y.Z
 ```
 
 The publish workflow checks that the tag matches `app.__version__` before building.
-The image lands at `ghcr.io/nulthara/filterhelm` with tags `X.Y.Z`, `X.Y` and `latest`,
-for `amd64` and `arm64`.
+The image lands at `ghcr.io/nulthara/filterhelm` with tags `X.Y.Z`, `X.Y`, `X` and
+`latest`, for `amd64` and `arm64`.
 
 The workflow signs build provenance and an SPDX SBOM describing the `amd64` image,
 then pushes both attestations to GHCR. Check the release with:

@@ -93,7 +93,8 @@ docker run -d --name filterhelm --read-only --tmpfs /tmp \
 docker exec -it filterhelm python -m app.auth set-password --username admin
 ```
 
-Pin a version tag such as `0.2.1` instead of `latest` for anything long-lived.
+Pin a version tag such as `1.0.0` instead of `latest` for anything long-lived, or use
+`1` to follow 1.x releases.
 
 ### Run with Compose
 

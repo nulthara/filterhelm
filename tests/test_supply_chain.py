@@ -100,6 +100,19 @@ def test_publish_workflow_pins_actions_by_sha() -> None:
     assert all(re.search(r"@[0-9a-f]{40}\s+# v\d+\.\d+\.\d+\s*$", line) for line in actions)
 
 
+def test_publish_workflow_tags_semver_patterns() -> None:
+    lines = {
+        line.strip()
+        for line in (ROOT / ".github/workflows/publish-image.yml").read_text().splitlines()
+    }
+    for pattern in (
+        "type=semver,pattern={{version}}",
+        "type=semver,pattern={{major}}.{{minor}}",
+        "type=semver,pattern={{major}}",
+    ):
+        assert pattern in lines
+
+
 def test_publish_workflow_shape() -> None:
     import yaml
 
