@@ -507,8 +507,7 @@ DropCapability=ALL
 
 - **Credential fallback.** Evaluate an encrypted or mounted-secret alternative to the
   plaintext `0600` `secrets.yml`.
-- **Mutation safety follow-ups.** Detect env-forced settings and handle audit-after-write
-  failures in single-instance group, client and domain routes.
+- **Mutation safety follow-ups.** Detect env-forced settings.
 - **Known gaps.**
   - Multi-instance list and domain adds give no per-instance recovery signal if the client
     times out mid-loop.

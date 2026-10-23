@@ -2797,3 +2797,130 @@ def test_instances_count_route_is_registered():
         getattr(route, "path", None) == "/api/instances/count" and "GET" in route.methods
         for route in api.router.routes
     )
+
+
+def _fail_single_route_audit(*_args):
+    raise OSError("audit unavailable")
+
+
+@pytest.mark.parametrize("operation", ["blocking", "add", "update", "delete", "gravity"])
+def test_blocking_and_adlist_routes_report_success_when_audit_fails(monkeypatch, caplog, operation):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    setup_api(monkeypatch)
+    monkeypatch.setattr(api, "record", _fail_single_route_audit)
+    application = FastAPI()
+    application.include_router(api.router)
+    address = "https://lists.example/block.txt"
+    with TestClient(application) as client:
+        if operation == "blocking":
+            response = client.post("/api/blocking", json={"instances": ["pihole1"], "enabled": False})
+            assert response.json()["results"][0]["success"] is True
+            assert FakePiholeClient.blocking_changes == [(False, None)]
+        elif operation == "add":
+            response = client.post("/api/adlists", json={"instances": ["pihole1"], "address": "https://lists.example/new"})
+            assert response.json()["results"][0]["success"] is True
+            assert FakePiholeClient.adlists[-1].address == "https://lists.example/new"
+        elif operation == "update":
+            response = client.patch("/api/adlists/pihole1", json={"address": address, "enabled": False})
+            assert FakePiholeClient.adlists[0].enabled is False
+        elif operation == "delete":
+            response = client.request("DELETE", "/api/adlists/pihole1", json={"address": address})
+            assert FakePiholeClient.adlists == []
+        else:
+            api.mark_gravity_pending("pihole1")
+            response = client.post("/api/adlists/pihole1/gravity")
+            assert response.json()["gravity_pending"] is False
+            assert FakePiholeClient.gravity_updates == 1
+        if operation != "blocking":
+            assert api.load_pending_gravity() == (set() if operation == "gravity" else {"pihole1"})
+    assert 200 <= response.status_code < 300
+    assert any(item.name == api.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)
+
+
+@pytest.mark.parametrize("cname", [False, True])
+@pytest.mark.parametrize("operation", ["add", "update", "delete"])
+def test_dns_routes_report_success_when_audit_fails(monkeypatch, caplog, operation, cname):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    setup_api(monkeypatch)
+    monkeypatch.setattr(api, "record", _fail_single_route_audit)
+    application = FastAPI()
+    application.include_router(api.router)
+    if cname:
+        old = {"hostname": "alias.lan", "target": "server.lan"}
+        new = {"hostname": "new.lan", "target": "server.lan"}
+        old_line, new_line = "alias.lan,server.lan", "new.lan,server.lan"
+        added, deleted = FakePiholeClient.added_cnames, FakePiholeClient.deleted_cnames
+    else:
+        old = {"hostname": "server.lan", "address": "192.168.1.10"}
+        new = {"hostname": "new.lan", "address": "192.168.1.11"}
+        old_line, new_line = "192.168.1.10 server.lan", "192.168.1.11 new.lan"
+        added, deleted = FakePiholeClient.added_hosts, FakePiholeClient.deleted_hosts
+    payload = {"instance": "pihole1", **(old if operation == "delete" else new)}
+    if operation == "update":
+        payload.update({f"old_{key}": value for key, value in old.items()})
+    with TestClient(application) as client:
+        response = client.request({"add": "POST", "update": "PATCH", "delete": "DELETE"}[operation],
+                                  "/api/dns/" + ("cnames" if cname else "records"), json=payload)
+    assert 200 <= response.status_code < 300
+    if operation == "delete":
+        assert response.json() == {"deleted": old_line}
+    elif operation == "update":
+        assert response.json() == {"changed": True, "record": new_line}
+    else:
+        assert response.json() == {"instance": "pihole1", "record": new_line}
+    assert added == ([] if operation == "delete" else [new_line])
+    assert deleted == ([] if operation == "add" else [old_line])
+    assert any(item.name == api.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)
+
+
+def test_settings_apply_reports_success_when_audit_fails(monkeypatch, caplog):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    setup_api(monkeypatch)
+    monkeypatch.setattr(api, "record", _fail_single_route_audit)
+    application = FastAPI()
+    application.include_router(api.router)
+    payload = {"values": {"dns.queryLogging": False}, "expected": {"dns.queryLogging": True}}
+    expected_changes = api.settings_diff("pihole1", api.SettingsInput(values=payload["values"]))["changes"]
+    with TestClient(application) as client:
+        response = client.post("/api/settings/pihole1/apply", json=payload)
+    assert response.status_code == 200
+    assert response.json() == {"applied": 1, "changes": expected_changes}
+    assert FakePiholeClient.patches == [{"dns": {"queryLogging": False}}]
+    assert any(item.name == api.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)
+
+
+@pytest.mark.parametrize("cname", [False, True])
+def test_partial_dns_failure_detail_survives_audit_failure(monkeypatch, caplog, cname):
+    setup_api(monkeypatch)
+    monkeypatch.setattr(api, "record", _fail_single_route_audit)
+
+    class FailingClient(FakePiholeClient):
+        def add_dns_cname(self, record):
+            raise PiholeAPIError("add failed")
+
+        def delete_dns_host(self, record):
+            raise PiholeAPIError("delete failed")
+
+    monkeypatch.setattr(api, "PiholeClient", FailingClient)
+    with pytest.raises(HTTPException) as caught:
+        if cname:
+            api.dns_cname_update(api.CNAMERecordUpdate(
+                instance="pihole1", old_hostname="alias.lan", old_target="server.lan",
+                hostname="alias.lan", target="new.lan",
+            ))
+        else:
+            api.dns_record_update(api.DNSRecordUpdate(
+                instance="pihole1", old_hostname="server.lan", old_address="192.168.1.10",
+                hostname="server.lan", address="192.168.1.11",
+            ))
+    assert caught.value.status_code == 502
+    detail = ("'alias.lan,server.lan' was removed and could not be restored" if cname else
+              "'192.168.1.11 server.lan' was added and could not be rolled back")
+    assert detail in caught.value.detail
+    assert any(item.name == api.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)

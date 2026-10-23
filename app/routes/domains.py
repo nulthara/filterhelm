@@ -258,7 +258,7 @@ def domain_add(payload: DomainAddInput):
         try:
             with _client(configured[name]) as client:
                 client.add_domain(payload.domain, payload.type, payload.kind, payload.comment)
-            record(
+            _audit_landed_write(
                 name,
                 "domain_add",
                 {},
@@ -355,7 +355,7 @@ def domain_update(instance_name: str, payload: DomainUpdateInput):
             target_enabled = payload.enabled if payload.enabled is not None else before.enabled
             target_groups = payload.groups if payload.groups is not None else list(before.groups)
             client.update_domain(before, enabled=target_enabled, groups=target_groups)
-        record(
+        _audit_landed_write(
             instance_name,
             "domain_update",
             _domain_data(before),
@@ -383,7 +383,7 @@ def domain_delete(instance_name: str, payload: DomainDeleteInput):
             before = _find_domain(client, payload.domain, payload.type, payload.kind)
             # Delete the matched record's stored value because the exact-kind fallback can match a different spelling.
             client.delete_domain(before.domain, before.type, before.kind)
-        record(
+        _audit_landed_write(
             instance_name,
             "domain_delete",
             _domain_data(before)

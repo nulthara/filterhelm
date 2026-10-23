@@ -615,7 +615,7 @@ def _partial_dns_failure(
     setting_key: str = "dns.hosts",
 ) -> NoReturn:
     # issue #12: a rollback failure must be reported with the exact lost lines, never masked as a generic 502/503
-    record(instance, event, {setting_key: removed}, {setting_key: added})
+    _audit_landed_write(instance, event, {setting_key: removed}, {setting_key: added})
     details = []
     if removed:
         lines = ", ".join(repr(line) for line in removed)
@@ -840,7 +840,7 @@ def blocking_update(payload: BlockingInput):
                 after = client.set_blocking(payload.enabled, payload.duration)
             before_audit = {"enabled": before.enabled, "timer": before.timer}
             after_audit = {"enabled": after.enabled, "timer": after.timer, "requested_duration": payload.duration}
-            record(name, "blocking_change", before_audit, after_audit)
+            _audit_landed_write(name, "blocking_change", before_audit, after_audit)
             results.append({"name": name, "success": True, "enabled": after.enabled, "timer": after.timer, "error": None})
         except HTTPException as exc:
             results.append({"name": name, "success": False, "enabled": None, "timer": None, "error": str(exc.detail)})
@@ -917,7 +917,7 @@ def adlist_add(payload: AdlistAddInput):
             with _client(configured[name]) as client:
                 client.add_adlist(payload.address, payload.comment)
             mark_gravity_pending(name)
-            record(name, "adlist_add", {}, {"address": payload.address, "comment": payload.comment, "enabled": True})
+            _audit_landed_write(name, "adlist_add", {}, {"address": payload.address, "comment": payload.comment, "enabled": True})
             results.append({"name": name, "success": True, "error": None})
         except HTTPException as exc:
             results.append({"name": name, "success": False, "error": str(exc.detail)})
@@ -1035,7 +1035,7 @@ def adlist_update(instance_name: str, payload: AdlistUpdateInput):
             target_groups = payload.groups if payload.groups is not None else list(before.groups)
             client.update_adlist(before, enabled=target_enabled, groups=target_groups)
         mark_gravity_pending(instance_name)
-        record(instance_name, "adlist_update", _adlist_data(before), {**_adlist_data(before), "enabled": target_enabled, "groups": target_groups})
+        _audit_landed_write(instance_name, "adlist_update", _adlist_data(before), {**_adlist_data(before), "enabled": target_enabled, "groups": target_groups})
         return {"instance": instance_name, "address": payload.address, "enabled": target_enabled, "groups": target_groups, "gravity_pending": True}
     except HTTPException:
         raise
@@ -1051,7 +1051,7 @@ def adlist_delete(instance_name: str, payload: AdlistDeleteInput):
             before = _find_adlist(client, payload.address)
             client.delete_adlist(before.address)
         mark_gravity_pending(instance_name)
-        record(instance_name, "adlist_delete", _adlist_data(before), {})
+        _audit_landed_write(instance_name, "adlist_delete", _adlist_data(before), {})
         return {"instance": instance_name, "address": payload.address, "gravity_pending": True}
     except HTTPException:
         raise
@@ -1068,7 +1068,7 @@ def gravity_update(instance_name: str):
         with _client(instance) as client:
             client.update_gravity()
         clear_gravity_pending(instance_name)
-        record(instance_name, "gravity_update", {"pending": True}, {"pending": False})
+        _audit_landed_write(instance_name, "gravity_update", {"pending": True}, {"pending": False})
         return {"instance": instance_name, "gravity_pending": False}
     except HTTPException:
         raise
@@ -1138,7 +1138,7 @@ def dns_record_add(payload: DNSRecordInput):
     except Exception as exc:  # noqa: BLE001
         raise _api_error(exc) from exc
     record_audit = {"dns.hosts": dns_record}
-    record(payload.instance, "dns_record_add", {}, record_audit)
+    _audit_landed_write(payload.instance, "dns_record_add", {}, record_audit)
     return {"instance": payload.instance, "record": dns_record}
 
 
@@ -1302,7 +1302,7 @@ def dns_record_delete(payload: DNSRecordInput):
         raise
     except Exception as exc:  # noqa: BLE001
         raise _api_error(exc) from exc
-    record(payload.instance, "dns_record_delete", {"dns.hosts": owner["raw"]}, {})
+    _audit_landed_write(payload.instance, "dns_record_delete", {"dns.hosts": owner["raw"]}, {})
     return {"deleted": owner["raw"]}
 
 
@@ -1373,7 +1373,7 @@ def dns_record_update(payload: DNSRecordUpdate):
         raise
     except Exception as exc:  # noqa: BLE001
         raise _api_error(exc) from exc
-    record(payload.instance, "dns_record_update", {"dns.hosts": old_owner["raw"]}, {"dns.hosts": new_record})
+    _audit_landed_write(payload.instance, "dns_record_update", {"dns.hosts": old_owner["raw"]}, {"dns.hosts": new_record})
     return {"changed": True, "record": new_record}
 
 
@@ -1429,7 +1429,7 @@ def dns_cname_add(payload: CNAMERecordInput) -> dict[str, str]:
         raise
     except Exception as exc:  # noqa: BLE001
         raise _api_error(exc) from exc
-    record(payload.instance, "dns_cname_add", {}, {"dns.cnameRecords": cname_record})
+    _audit_landed_write(payload.instance, "dns_cname_add", {}, {"dns.cnameRecords": cname_record})
     return {"instance": payload.instance, "record": cname_record}
 
 
@@ -1452,7 +1452,7 @@ def dns_cname_delete(payload: CNAMERecordInput) -> dict[str, str]:
         raise
     except Exception as exc:  # noqa: BLE001
         raise _api_error(exc) from exc
-    record(payload.instance, "dns_cname_delete", {"dns.cnameRecords": owner["raw"]}, {})
+    _audit_landed_write(payload.instance, "dns_cname_delete", {"dns.cnameRecords": owner["raw"]}, {})
     return {"deleted": owner["raw"]}
 
 
@@ -1496,7 +1496,7 @@ def dns_cname_update(payload: CNAMERecordUpdate) -> dict[str, Any]:
         raise
     except Exception as exc:  # noqa: BLE001
         raise _api_error(exc) from exc
-    record(payload.instance, "dns_cname_update", {"dns.cnameRecords": old_owner["raw"]}, {"dns.cnameRecords": new_record})
+    _audit_landed_write(payload.instance, "dns_cname_update", {"dns.cnameRecords": old_owner["raw"]}, {"dns.cnameRecords": new_record})
     return {"changed": True, "record": new_record}
 
 
@@ -1578,5 +1578,5 @@ def settings_apply(name: str, payload: SettingsApplyInput):
         raise
     except Exception as exc:  # noqa: BLE001
         raise _api_error(exc) from exc
-    record(name, "settings_change", before, after)
+    _audit_landed_write(name, "settings_change", before, after)
     return {"applied": len(changes), "changes": changes}

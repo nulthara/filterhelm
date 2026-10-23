@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import os
 from typing import Any, Callable, Literal, TypeVar
 
@@ -11,6 +12,25 @@ from pydantic import BaseModel, Field, field_validator
 from app.audit import record
 from app.config import CredentialStore, Instance, load_instances, mark_gravity_pending
 from app.pihole_client import Adlist, Domain, Group, PiholeAPIError, PiholeClient
+
+logger = logging.getLogger(__name__)
+
+
+def _audit_landed_write(instance: str, action: str, before: dict, after: dict) -> None:
+    """Audit a mutation that has already landed on the instance.
+
+    The write is done and cannot be taken back, so a failure to log it must not raise.
+    Raising would relabel a successful mutation as failed. The lost audit line goes
+    to the server log.
+
+    Deliberately module-local: resolving `record` from this module's globals keeps
+    `monkeypatch.setattr(<module>, "record", ...)` working in the existing tests.
+    """
+    try:
+        record(instance, action, before, after)
+    except Exception:  # noqa: BLE001 - an audit failure must never mask a landed write
+        logger.exception("audit write failed for %s on %s", action, instance)
+
 
 router = APIRouter(prefix="/api")
 credentials = CredentialStore()
@@ -207,7 +227,7 @@ def group_add(payload: GroupAddInput):
         try:
             with _client(configured[name]) as client:
                 client.add_group(payload.name, payload.comment)
-            record(name, "group_add", {}, {"name": payload.name, "comment": payload.comment, "enabled": True})
+            _audit_landed_write(name, "group_add", {}, {"name": payload.name, "comment": payload.comment, "enabled": True})
             results.append({"name": name, "success": True, "error": None})
         except HTTPException as exc:
             results.append({"name": name, "success": False, "error": str(exc.detail)})
@@ -225,7 +245,7 @@ def group_update(instance_name: str, payload: GroupUpdateInput):
         with _client(instance) as client:
             before = _find_group(client, payload.name)
             client.update_group(before, enabled=payload.enabled)
-        record(instance_name, "group_update", _group_data(before), {**_group_data(before), "enabled": payload.enabled})
+        _audit_landed_write(instance_name, "group_update", _group_data(before), {**_group_data(before), "enabled": payload.enabled})
         return {"instance": instance_name, "name": payload.name, "enabled": payload.enabled}
     except HTTPException:
         raise
@@ -271,8 +291,8 @@ def group_delete(instance_name: str, payload: GroupDeleteInput) -> dict[str, Any
                             client.update_domain(item, enabled=item.enabled, groups=[0])
                         operation = "delete" if payload.orphans == "delete" else "update"
                         data = _orphan_adlist_data(item) if is_adlist else _orphan_domain_data(item)
-                        record(instance_name, f"{kind}_{operation}", data | {"groups": list(item.groups)},
-                               {"cascade": f"group_delete:{payload.name}"})
+                        _audit_landed_write(instance_name, f"{kind}_{operation}", data | {"groups": list(item.groups)},
+                                            {"cascade": f"group_delete:{payload.name}"})
                     except PiholeAPIError as exc:
                         error = str(exc)
                     except Exception:  # noqa: BLE001 - hide transport details
@@ -285,7 +305,7 @@ def group_delete(instance_name: str, payload: GroupDeleteInput) -> dict[str, Any
             if deleted:
                 client.delete_group(before.name)
                 after = {} if payload.orphans == "ignore" else {"orphans": payload.orphans, "orphan_count": len(results)}
-                record(instance_name, "group_delete", _group_data(before) | {"name": before.name}, after)
+                _audit_landed_write(instance_name, "group_delete", _group_data(before) | {"name": before.name}, after)
         return {"instance": instance_name, "name": payload.name, "deleted": deleted,
                 "orphans": results, "gravity_pending": gravity_pending}
     except HTTPException:

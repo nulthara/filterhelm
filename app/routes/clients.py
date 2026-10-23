@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import os
 from typing import Any, Callable, TypeVar
 
@@ -11,6 +12,25 @@ from pydantic import BaseModel, Field, field_validator
 from app.audit import record
 from app.config import CredentialStore, Instance, load_instances
 from app.pihole_client import Client, PiholeAPIError, PiholeClient
+
+logger = logging.getLogger(__name__)
+
+
+def _audit_landed_write(instance: str, action: str, before: dict, after: dict) -> None:
+    """Audit a mutation that has already landed on the instance.
+
+    The write is done and cannot be taken back, so a failure to log it must not raise.
+    Raising would relabel a successful mutation as failed. The lost audit line goes
+    to the server log.
+
+    Deliberately module-local: resolving `record` from this module's globals keeps
+    `monkeypatch.setattr(<module>, "record", ...)` working in the existing tests.
+    """
+    try:
+        record(instance, action, before, after)
+    except Exception:  # noqa: BLE001 - an audit failure must never mask a landed write
+        logger.exception("audit write failed for %s on %s", action, instance)
+
 
 router = APIRouter(prefix="/api")
 credentials = CredentialStore()
@@ -141,7 +161,7 @@ def client_add(payload: ClientAddInput):
         try:
             with _client(configured[name]) as client:
                 client.add_client(payload.client, payload.comment)
-            record(name, "client_add", {}, {"client": payload.client, "comment": payload.comment, "groups": [0]})
+            _audit_landed_write(name, "client_add", {}, {"client": payload.client, "comment": payload.comment, "groups": [0]})
             results.append({"name": name, "success": True, "error": None})
         except HTTPException as exc:
             results.append({"name": name, "success": False, "error": str(exc.detail)})
@@ -159,7 +179,7 @@ def client_update_groups(instance_name: str, payload: ClientGroupsUpdateInput):
         with _client(instance) as client:
             before = _find_client(client, payload.client)
             client.update_client(before, groups=payload.groups)
-        record(instance_name, "client_update_groups", _client_data(before), {**_client_data(before), "groups": payload.groups})
+        _audit_landed_write(instance_name, "client_update_groups", _client_data(before), {**_client_data(before), "groups": payload.groups})
         return {"instance": instance_name, "client": payload.client, "groups": payload.groups}
     except HTTPException:
         raise
@@ -174,7 +194,7 @@ def client_delete(instance_name: str, payload: ClientDeleteInput):
         with _client(instance) as client:
             before = _find_client(client, payload.client)
             client.delete_client(before.client)
-        record(instance_name, "client_delete", _client_data(before) | {"client": before.client}, {})
+        _audit_landed_write(instance_name, "client_delete", _client_data(before) | {"client": before.client}, {})
         return {"instance": instance_name, "client": payload.client}
     except HTTPException:
         raise

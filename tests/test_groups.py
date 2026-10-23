@@ -380,3 +380,41 @@ def test_group_write_failure_is_not_audited(monkeypatch, operation, error, statu
     assert caught.value.status_code == status
     assert caught.value.detail == detail
     assert FakeGroupsPiholeClient.audits == []
+
+
+def _fail_audit(*_args):
+    raise OSError("audit unavailable")
+
+
+@pytest.mark.parametrize("operation", ["add", "update", "delete", "ignore", "reassign"])
+def test_group_routes_report_success_when_audit_fails(monkeypatch, caplog, operation):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    fake = setup_orphans(monkeypatch)
+    monkeypatch.setattr(groups, "record", _fail_audit)
+    application = FastAPI()
+    application.include_router(groups.router)
+    with TestClient(application) as client:
+        if operation == "add":
+            response = client.post("/api/groups", json={"instances": ["pihole1", "pihole2"], "name": "New"})
+            assert [item["success"] for item in response.json()["results"]] == [True, True]
+            assert fake.added == [("pihole1", "New", ""), ("pihole2", "New", "")]
+        elif operation == "update":
+            response = client.patch("/api/groups/pihole1", json={"name": "Kids", "enabled": False})
+            assert fake.items["pihole1"][0].enabled is False
+        else:
+            response = client.request("DELETE", "/api/groups/pihole1", json={"name": "Kids", "orphans": operation})
+            result = response.json()
+            assert result["deleted"] is True
+            assert fake.items["pihole1"] == []
+            assert len(result["orphans"]) == (0 if operation == "ignore" else 2)
+            assert all(item["success"] for item in result["orphans"])
+            if operation == "delete":
+                assert [item.address for item in fake.adlists["pihole1"]] == ["https://lists.example/shared"]
+                assert [item.domain for item in fake.domains["pihole1"]] == ["other.example"]
+            elif operation == "reassign":
+                assert fake.adlists["pihole1"][0].groups == (0,)
+                assert fake.domains["pihole1"][0].groups == (0,)
+    assert 200 <= response.status_code < 300
+    assert any(item.name == groups.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)

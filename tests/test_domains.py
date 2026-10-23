@@ -620,3 +620,34 @@ def test_domain_write_failure_is_not_audited(monkeypatch, operation, error, stat
     assert caught.value.status_code == status
     assert caught.value.detail == detail
     assert FakeDomainsPiholeClient.audits == []
+
+
+def _fail_audit(*_args):
+    raise OSError("audit unavailable")
+
+
+@pytest.mark.parametrize("operation", ["add", "update", "delete"])
+def test_domain_single_routes_report_success_when_audit_fails(monkeypatch, caplog, operation):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    setup_domains(monkeypatch)
+    fake = FakeDomainsPiholeClient
+    fake.items = {"pihole1": [make_domain("ads.example")]}
+    monkeypatch.setattr(domains, "record", _fail_audit)
+    application = FastAPI()
+    application.include_router(domains.router)
+    payload = {"domain": "ads.example", "type": "deny", "kind": "exact"}
+    with TestClient(application) as client:
+        if operation == "add":
+            response = client.post("/api/domains", json={**payload, "instances": ["pihole1", "pihole2"], "domain": "new.example"})
+            assert [item["success"] for item in response.json()["results"]] == [True, True]
+            assert [item[0] for item in fake.added] == ["pihole1", "pihole2"]
+        elif operation == "update":
+            response = client.patch("/api/domains/pihole1", json={**payload, "enabled": False})
+            assert fake.items["pihole1"][0].enabled is False
+        else:
+            response = client.request("DELETE", "/api/domains/pihole1", json=payload)
+            assert fake.items["pihole1"] == []
+    assert 200 <= response.status_code < 300
+    assert any(item.name == domains.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)

@@ -137,3 +137,33 @@ def test_client_write_failure_is_not_audited(monkeypatch, operation, error, stat
     assert caught.value.status_code == status
     assert caught.value.detail == detail
     assert FakeClientsPiholeClient.audits == []
+
+
+def _fail_audit(*_args):
+    raise OSError("audit unavailable")
+
+
+@pytest.mark.parametrize("operation", ["add", "update", "delete"])
+def test_client_routes_report_success_when_audit_fails(monkeypatch, caplog, operation):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    setup_clients(monkeypatch)
+    fake = FakeClientsPiholeClient
+    fake.items = {"pihole1": [make_client("host")]}
+    monkeypatch.setattr(clients, "record", _fail_audit)
+    application = FastAPI()
+    application.include_router(clients.router)
+    with TestClient(application) as client:
+        if operation == "add":
+            response = client.post("/api/clients", json={"instances": ["pihole1", "pihole2"], "client": "new"})
+            assert [item["success"] for item in response.json()["results"]] == [True, True]
+            assert [item[0] for item in fake.added] == ["pihole1", "pihole2"]
+        elif operation == "update":
+            response = client.patch("/api/clients/pihole1", json={"client": "host", "groups": [0, 5]})
+            assert fake.items["pihole1"][0].groups == (0, 5)
+        else:
+            response = client.request("DELETE", "/api/clients/pihole1", json={"client": "host"})
+            assert fake.items["pihole1"] == []
+    assert 200 <= response.status_code < 300
+    assert any(item.name == clients.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)
