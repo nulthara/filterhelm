@@ -1,6 +1,6 @@
 # 0040 — Contain audit failures after a landed write in single-instance routes
 
-Status: in-review             <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped             <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0040-audit-after-write-single-routes
 Author: Kyrnveil
 Date: 2026-10-18

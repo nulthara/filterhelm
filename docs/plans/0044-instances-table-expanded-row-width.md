@@ -1,6 +1,6 @@
 # 0044 — Instances table collapses when a health row is expanded
 
-Status: in-review           <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped           <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0044-instances-table-expanded-row-width
 Author: Kyrnveil
 Date: 2026-10-22
