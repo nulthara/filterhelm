@@ -285,8 +285,14 @@ probe but misbehaves, revert the commit on `main` and push.
 ## Releasing
 
 Bump `app/__init__.py`, `frontend/package.json` and both root version fields in
-`frontend/package-lock.json` through a normal plan. After merge, run the required
-hygiene checks and push main to the GitHub mirror:
+`frontend/package-lock.json` on a feature branch. The script edits all four and refuses a
+version that is not higher than the current one:
+
+```bash
+./.venv/bin/python scripts/bump_version.py patch   # or minor, major, X.Y.Z
+```
+
+After merge, run the required hygiene checks and push main to the GitHub mirror:
 
 ```bash
 FILTERHELM_REQUIRE_DENYLIST=1 ./.venv/bin/pytest
