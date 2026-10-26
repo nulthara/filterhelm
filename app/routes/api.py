@@ -23,6 +23,7 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app import __version__
+from app.update_check import check_for_update
 from app.audit import record
 from app.config import (
     CredentialStore,
@@ -81,6 +82,20 @@ def _fanout(items: list[_Item], worker: Callable[[_Item], _Result]) -> list[_Res
 
 class VersionInfo(BaseModel):
     version: str
+
+
+class UpdateInfo(BaseModel):
+    enabled: bool
+    current: str
+    latest: str | None
+    update_available: bool
+
+
+@router.get("/update", response_model=UpdateInfo)
+def update() -> UpdateInfo:
+    status = check_for_update()
+    return UpdateInfo(enabled=status.enabled, current=status.current,
+                      latest=status.latest, update_available=status.update_available)
 
 
 class InstanceCount(BaseModel):

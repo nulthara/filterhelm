@@ -2,6 +2,13 @@ export interface VersionInfo {
   version: string
 }
 
+export interface UpdateInfo {
+  enabled: boolean
+  current: string
+  latest: string | null
+  update_available: boolean
+}
+
 export interface InstanceCount {
   count: number
 }
@@ -556,6 +563,7 @@ export interface DriftResponse {
 
 export const api = {
   version: (signal?: AbortSignal) => request<VersionInfo>('/api/version', { signal }),
+  update: (signal?: AbortSignal) => request<UpdateInfo>('/api/update', { signal }),
   drift: (signal?: AbortSignal) => request<DriftResponse>('/api/drift', { signal }),
   auditLog: (filters: AuditLogFilters, signal?: AbortSignal) => {
     const params = new URLSearchParams({

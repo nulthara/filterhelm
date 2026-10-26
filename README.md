@@ -282,6 +282,13 @@ credentials, control characters, fragments, and literal IPs in denied ranges. It
 resolve them or check them against the allowlist. Update, delete, and bulk actions refer to
 existing lists and skip URL checks.
 
+### Update check
+
+On each new cache window, when the browser asks, FilterHelm asks GitHub's API for the
+latest published release. It sends no instance data; the User-Agent carries the running
+version. The result is cached for 6 hours, or 15 minutes after a failure.
+Set `FILTERHELM_UPDATE_CHECK=off` to disable the call.
+
 ## Pi-hole compatibility
 
 FilterHelm supports the Pi-hole FTL 6.x REST API.

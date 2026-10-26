@@ -8,6 +8,8 @@ import os
 import socket
 from urllib.parse import urlsplit, urlunsplit
 
+UPDATE_CHECK_ORIGIN = "https://api.github.com"
+
 PUBLIC_ALLOWLIST_ENV = "FILTERHELM_PUBLIC_ALLOWLIST"
 _PRIVATE_V4 = tuple(ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 _PRIVATE_V6 = (ipaddress.ip_network("fc00::/7"),)
@@ -221,3 +223,22 @@ def screen_adlist_url(value: str) -> str:
     if address is not None and _prohibited_literal_host(address):
         raise URLPolicyError(f"Block list URL points at prohibited address {address}")
     return canonical
+
+
+def resolve_update_check_destination(*, resolver=socket.getaddrinfo) -> ValidatedDestination:
+    """Resolve the fixed update origin and refuse every non-public answer."""
+    normalized = normalize_instance_url(UPDATE_CHECK_ORIGIN)
+    host = urlsplit(normalized).hostname
+    assert host is not None
+    try:
+        answers = resolver(host, 443, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise URLPolicyError("Update check host could not be resolved") from exc
+    addresses = {ipaddress.ip_address(answer[4][0]) for answer in answers}
+    if not addresses:
+        raise URLPolicyError("Update check host did not resolve to an address")
+    for original in addresses:
+        address = _effective_address(original)
+        if _prohibited(address) or _default_private(address):
+            raise URLPolicyError(f"Update check host resolves to non-public address {address}")
+    return ValidatedDestination(normalized, host, None, tuple(sorted(addresses, key=str)))

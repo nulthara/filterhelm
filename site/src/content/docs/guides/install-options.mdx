@@ -86,6 +86,8 @@ gh attestation verify oci://ghcr.io/nulthara/filterhelm:X.Y.Z --owner nulthara \
 
 `FILTERHELM_COOKIE_SECURE=false` allows sign-in over plain HTTP. Use it only on loopback. Production session cookies require HTTPS. Behind an HTTPS reverse proxy, set `FILTERHELM_COOKIE_SECURE=true` and add your public hostname to `FILTERHELM_TRUSTED_HOSTS`.
 
+The header shows an arrow when a newer release exists; set `FILTERHELM_UPDATE_CHECK=off` to disable the check.
+
 Preserve the public `Host` header at the reverse proxy. Protect the data directory and its backups. On headless hosts, stored Pi-hole passwords are protected by file permissions but are not encrypted.
 
 [Read more about deployment](https://github.com/nulthara/filterhelm/blob/main/docs/deploy.md).

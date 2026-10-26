@@ -2924,3 +2924,11 @@ def test_partial_dns_failure_detail_survives_audit_failure(monkeypatch, caplog, 
               "'192.168.1.11 server.lan' was added and could not be rolled back")
     assert detail in caught.value.detail
     assert any(item.name == api.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)
+
+
+def test_update_route_returns_status(monkeypatch):
+    from app.update_check import UpdateStatus
+    monkeypatch.setattr(api, 'check_for_update', lambda: UpdateStatus(True, '1.0.2', '1.1.0', True))
+    assert api.update().model_dump() == {
+        'enabled': True, 'current': '1.0.2', 'latest': '1.1.0', 'update_available': True,
+    }

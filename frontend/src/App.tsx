@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AuditOutlined, DashboardOutlined, DiffOutlined, DatabaseOutlined, DesktopOutlined, FileSearchOutlined, FilterOutlined, GlobalOutlined, HistoryOutlined, LogoutOutlined, SettingOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { ArrowUpOutlined, AuditOutlined, DashboardOutlined, DiffOutlined, DatabaseOutlined, DesktopOutlined, FileSearchOutlined, FilterOutlined, GlobalOutlined, HistoryOutlined, LogoutOutlined, SettingOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import { Alert, App as AntApp, Button, Card, Form, Input, Layout, Menu, Skeleton, Space, Tooltip, Typography } from 'antd'
 import InstancesPage from './pages/InstancesPage'
 import SettingsPage from './pages/SettingsPage'
@@ -13,7 +13,7 @@ import LookupPage from './pages/LookupPage'
 import QueriesPage from './pages/QueriesPage'
 import AuditPage from './pages/AuditPage'
 import DriftPage, { type DriftTarget } from './pages/DriftPage'
-import { api, type AuthStatus } from './api'
+import { api, type AuthStatus, type UpdateInfo } from './api'
 import brandMark from './assets/filterhelm-icon-compact.svg'
 import ThemeToggle from './ThemeToggle'
 import { releaseUrl } from './release'
@@ -28,6 +28,7 @@ export default function App() {
   const [dnsTab, setDnsTab] = useState<DNSTab>('hosts')
   const [auth, setAuth] = useState<AuthStatus>()
   const [version, setVersion] = useState<string>()
+  const [update, setUpdate] = useState<UpdateInfo>()
   const [authError, setAuthError] = useState<string>()
   const [loggingIn, setLoggingIn] = useState(false)
   const [loginForm] = Form.useForm<{ username: string; password: string }>()
@@ -42,6 +43,13 @@ export default function App() {
     if (!auth?.authenticated) return
     const controller = new AbortController()
     void api.version(controller.signal).then((info) => setVersion(info.version)).catch(() => {})
+    return () => controller.abort()
+  }, [auth?.authenticated])
+
+  useEffect(() => {
+    if (!auth?.authenticated) return
+    const controller = new AbortController()
+    void api.update(controller.signal).then(setUpdate).catch(() => {})
     return () => controller.abort()
   }, [auth?.authenticated])
 
@@ -119,12 +127,23 @@ export default function App() {
     )
   }
 
+  const updateIndicator = update?.update_available && update.latest ? (
+    <Tooltip title={`FilterHelm ${update.latest} is available`}>
+      <Typography.Link className="app-update" href={releaseUrl(update.latest)}
+        target="_blank" rel="noopener noreferrer"
+        aria-label={`FilterHelm ${update.latest} is available`}>
+        <ArrowUpOutlined />
+      </Typography.Link>
+    </Tooltip>
+  ) : null
+
   return (
     <Layout className="app-shell">
       <Header className="app-header">
         <img className="brand-mark" src={brandMark} alt="" width={32} height={32} />
         <Typography.Title level={4} className="brand-title">FilterHelm</Typography.Title>
         {version ? <Typography.Link className="app-version" href={releaseUrl(version)} target="_blank" rel="noopener noreferrer">v{version}</Typography.Link> : null}
+        {updateIndicator}
         <Space className="auth-actions">
           <ThemeToggle />
           <Typography.Text className="auth-user">{auth.user}</Typography.Text>

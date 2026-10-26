@@ -174,3 +174,38 @@ def test_adlist_url_rejects_unsafe_syntax(url):
 def test_instance_url_policy_is_unchanged():
     with pytest.raises(URLPolicyError, match="not allowlisted"):
         validate_instance_destination("https://example.com", allowlist=EMPTY, resolver=resolver_for("8.8.8.8"))
+
+
+def test_update_check_destination_accepts_public_answers():
+    from app.url_policy import resolve_update_check_destination
+    destination = resolve_update_check_destination(resolver=resolver_for('8.8.8.8', '2606:4700:4700::1111'))
+    assert destination.url == 'https://api.github.com'
+    assert destination.host == 'api.github.com'
+    assert destination.port is None
+    assert set(destination.addresses) == {ipaddress.ip_address('8.8.8.8'), ipaddress.ip_address('2606:4700:4700::1111')}
+
+
+@pytest.mark.parametrize('address', ['127.0.0.1', '169.254.169.254', '10.0.0.5', '192.168.1.2', 'fd00::1', '::ffff:10.0.0.1'])
+@pytest.mark.parametrize('mixed', [False, True])
+def test_update_check_destination_rejects_non_public_answers(address, mixed):
+    from app.url_policy import resolve_update_check_destination
+    addresses = [address, '8.8.8.8'] if mixed else [address]
+    with pytest.raises(URLPolicyError, match='non-public address'):
+        resolve_update_check_destination(resolver=resolver_for(*addresses))
+
+
+def test_update_check_destination_ignores_public_allowlist(monkeypatch):
+    from app.url_policy import resolve_update_check_destination
+    monkeypatch.setenv('FILTERHELM_PUBLIC_ALLOWLIST', '10.0.0.0/8')
+    with pytest.raises(URLPolicyError):
+        resolve_update_check_destination(resolver=resolver_for('10.0.0.5'))
+
+
+def test_update_check_destination_resolution_failure():
+    from app.url_policy import resolve_update_check_destination
+    def fail(*args, **kwargs):
+        raise OSError('DNS unavailable')
+    with pytest.raises(URLPolicyError, match='Update check host could not be resolved'):
+        resolve_update_check_destination(resolver=fail)
+    with pytest.raises(URLPolicyError, match='did not resolve to an address'):
+        resolve_update_check_destination(resolver=resolver_for())

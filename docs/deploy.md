@@ -192,6 +192,8 @@ FILTERHELM_COOKIE_SECURE=true
 FILTERHELM_TRUSTED_HOSTS=manager.example,127.0.0.1
 # Optional. Only needed for Pi-hole instances on public addresses.
 # FILTERHELM_PUBLIC_ALLOWLIST=pihole.example.com,198.51.100.1,2001:db8:ab09::3574
+# Optional. Set to off to stop the GitHub release check.
+# FILTERHELM_UPDATE_CHECK=off
 ```
 
 Do not set `FILTERHELM_DATA` here. The Quadlet sets it to `/data`, and the Quadlet value
