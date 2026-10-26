@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import concurrent.futures
 from dataclasses import dataclass
 import logging
 import os
 import re
+import socket
 import threading
 import time
 
@@ -20,6 +22,7 @@ RELEASES_LATEST_PATH = "/repos/nulthara/filterhelm/releases/latest"
 SUCCESS_TTL_SECONDS = 6 * 3600
 FAILURE_TTL_SECONDS = 15 * 60
 TIMEOUT_SECONDS = 5.0
+_RESOLVER = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="filterhelm-update-dns")
 logger = logging.getLogger(__name__)
 
 
@@ -36,8 +39,17 @@ def parse_version(value: object) -> tuple[int, int, int] | None:
     return (int(match[1]), int(match[2]), int(match[3]))
 
 
+def _bounded_resolve(host, port, *, type):
+    future = _RESOLVER.submit(socket.getaddrinfo, host, port, type=type)
+    try:
+        return future.result(timeout=TIMEOUT_SECONDS)
+    except concurrent.futures.TimeoutError as exc:
+        future.cancel()
+        raise OSError("update check DNS lookup timed out") from exc
+
+
 def _open_client() -> httpx.Client:
-    destination = resolve_update_check_destination()
+    destination = resolve_update_check_destination(resolver=_bounded_resolve)
     return httpx.Client(
         base_url=destination.url,
         transport=_PinnedTransport(destination, verify=True),
@@ -76,16 +88,23 @@ def check_for_update(*, clock: Callable[[], float] = time.monotonic) -> UpdateSt
     global _cache
     if not update_check_enabled():
         return UpdateStatus(False, __version__, None, False)
-    with _lock:
-        if _cache is None or clock() >= _cache[0]:
-            try:
-                latest = fetch_latest_release()
-            except Exception as exc:
-                logger.warning("update check failed: %s", type(exc).__name__)
-                latest = None
-            ttl = SUCCESS_TTL_SECONDS if latest is not None else FAILURE_TTL_SECONDS
-            _cache = (clock() + ttl, latest)
-        latest = _cache[1]
+    if _lock.acquire(blocking=False):
+        try:
+            cache = _cache
+            if cache is None or clock() >= cache[0]:
+                try:
+                    latest = fetch_latest_release()
+                except Exception as exc:
+                    logger.warning("update check failed: %s", type(exc).__name__)
+                    latest = None
+                ttl = SUCCESS_TTL_SECONDS if latest is not None else FAILURE_TTL_SECONDS
+                cache = (clock() + ttl, latest)
+                _cache = cache
+        finally:
+            _lock.release()
+    else:
+        cache = _cache
+    latest = cache[1] if cache is not None else None
     current_version = parse_version(__version__)
     latest_version = parse_version(latest)
     available = current_version is not None and latest_version is not None and latest_version > current_version

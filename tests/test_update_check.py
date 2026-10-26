@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
+import threading
+import time
 
 import httpx
 import pytest
@@ -114,8 +117,13 @@ def test_fetch_rejects_bad_payloads(monkeypatch, status, body):
 def test_open_client_uses_pinned_policy_transport(monkeypatch):
     destination = ValidatedDestination('https://api.github.com', 'api.github.com', None,
                                        (ipaddress.ip_address('8.8.8.8'),))
-    monkeypatch.setattr(update_check, 'resolve_update_check_destination', lambda: destination)
+    resolvers = []
+    def resolve(*, resolver):
+        resolvers.append(resolver)
+        return destination
+    monkeypatch.setattr(update_check, 'resolve_update_check_destination', resolve)
     with update_check._open_client() as client:
+        assert resolvers == [update_check._bounded_resolve]
         assert isinstance(client._transport, _PinnedTransport)
         assert client._transport.destination == destination
         assert client.follow_redirects is False
@@ -129,3 +137,98 @@ def test_open_client_uses_pinned_policy_transport(monkeypatch):
                                          ('1.2.3.dev1', None), ('1.2.3\n', None), (None, None)])
 def test_parse_version(value, expected):
     assert update_check.parse_version(value) == expected
+
+
+def test_concurrent_caller_does_not_wait_for_refresh(monkeypatch):
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+    results = []
+    def fetch():
+        calls.append(1)
+        entered.set()
+        release.wait(3)
+        return '1.1.0'
+    monkeypatch.setattr(update_check, 'fetch_latest_release', fetch)
+    worker = threading.Thread(target=lambda: results.append(update_check.check_for_update()))
+    worker.start()
+    try:
+        assert entered.wait(1)
+        start = time.monotonic()
+        status = update_check.check_for_update()
+        assert time.monotonic() - start < 1
+        assert status.latest is None
+        assert status.update_available is False
+    finally:
+        release.set()
+        worker.join(3)
+    assert not worker.is_alive()
+    assert calls == [1]
+    assert results[0].latest == '1.1.0'
+
+
+def test_concurrent_caller_gets_stale_cache_during_refresh(monkeypatch):
+    monkeypatch.setattr(update_check, 'fetch_latest_release', lambda: '1.1.0')
+    update_check.check_for_update(clock=lambda: 0)
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+    results = []
+    now = update_check.SUCCESS_TTL_SECONDS + 1
+    def fetch():
+        calls.append(1)
+        entered.set()
+        release.wait(3)
+        return '1.2.0'
+    monkeypatch.setattr(update_check, 'fetch_latest_release', fetch)
+    worker = threading.Thread(target=lambda: results.append(update_check.check_for_update(clock=lambda: now)))
+    worker.start()
+    try:
+        assert entered.wait(1)
+        start = time.monotonic()
+        status = update_check.check_for_update(clock=lambda: now)
+        assert time.monotonic() - start < 1
+        assert status.latest == '1.1.0'
+        assert status.update_available is True
+    finally:
+        release.set()
+        worker.join(3)
+    assert not worker.is_alive()
+    assert calls == [1]
+    assert results[0].latest == '1.2.0'
+
+
+def test_bounded_resolve_times_out(monkeypatch):
+    entered = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    def resolve(host, port, *, type):
+        entered.set()
+        try:
+            release.wait(3)
+            return []
+        finally:
+            finished.set()
+    monkeypatch.setattr(update_check, 'TIMEOUT_SECONDS', 0.1)
+    monkeypatch.setattr(update_check.socket, 'getaddrinfo', resolve)
+    try:
+        start = time.monotonic()
+        with pytest.raises(OSError, match='update check DNS lookup timed out'):
+            update_check._bounded_resolve('api.github.com', 443, type=socket.SOCK_STREAM)
+        assert time.monotonic() - start < 1
+        assert entered.is_set()
+    finally:
+        release.set()
+        if entered.is_set():
+            assert finished.wait(1)
+
+
+def test_bounded_resolve_returns_answers(monkeypatch):
+    answers = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]
+    def resolve(host, port, *, type):
+        assert host == 'api.github.com'
+        assert port == 443
+        assert type == socket.SOCK_STREAM
+        return answers
+    monkeypatch.setattr(update_check.socket, 'getaddrinfo', resolve)
+    assert update_check._bounded_resolve('api.github.com', 443, type=socket.SOCK_STREAM) is answers
