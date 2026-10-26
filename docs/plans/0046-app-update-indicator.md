@@ -57,9 +57,25 @@ existing `_PinnedTransport` from `app/pihole_client.py`, so the checked address 
 dialed, and TLS still verifies against `api.github.com`.
 
 The cache lives in `app/update_check.py` as a module-level value behind a `threading.Lock`.
-A success stays fresh for 6 hours and a failure for 15 minutes. The lock serializes
-concurrent requests, so only one fetch is in flight. Holding the lock across the
-network call is acceptable because the timeout is 5 seconds and callers want the same answer.
+A success stays fresh for 6 hours and a failure for 15 minutes. Only one request refreshes
+at a time, and no other request waits for it. A caller acquires the lock without blocking.
+If another request holds the lock, the caller returns the last cached value at once, or
+"no update known" on a cold cache. The cost is that a page load during a refresh can miss
+the arrow until the next load.
+
+The `httpx` timeout does not cover DNS, because `socket.getaddrinfo` takes no timeout.
+`update_check` therefore passes `resolve_update_check_destination()` a bounded resolver.
+That resolver runs `getaddrinfo` on a one-worker executor and waits at most
+`TIMEOUT_SECONDS`. A lookup that runs past the limit raises `OSError`, which the policy
+function turns into `URLPolicyError`, so the failure gets cached. The timed-out lookup
+thread runs on until the OS resolver gives up. The one-worker executor and the 15-minute
+failure cache keep that to one stray thread at a time. That thread only serves a read the
+user started, so it is not a scheduler.
+
+Revision 1 (review of the first pass): The first version held the lock across the whole
+fetch, including an unbounded DNS lookup. A DNS outage made every concurrent `/api/update`
+call wait on the lock while it occupied a FastAPI worker thread. Enough of them would stall
+unrelated routes.
 
 Every failure degrades to "no update known". Failures include DNS, policy rejection,
 timeout, non-200, bad JSON, and a malformed `tag_name`. The route never errors, and the
@@ -129,8 +145,13 @@ Rejected alternatives:
      Read the env on every call so tests can monkeypatch it.
    - `def parse_version(value: object) -> tuple[int, int, int] | None` — regex
      `^v?(\d+)\.(\d+)\.(\d+)$` on a `str`, else None.
-   - `def _open_client() -> httpx.Client` — calls `resolve_update_check_destination()` and
-     returns
+   - `_RESOLVER = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="filterhelm-update-dns")`.
+   - `def _bounded_resolve(host, port, *, type)` — submits
+     `socket.getaddrinfo(host, port, type=type)` to `_RESOLVER` and returns
+     `future.result(timeout=TIMEOUT_SECONDS)`. On `concurrent.futures.TimeoutError`, call
+     `future.cancel()` and raise `OSError("update check DNS lookup timed out")`.
+   - `def _open_client() -> httpx.Client` — calls
+     `resolve_update_check_destination(resolver=_bounded_resolve)` and returns
      `httpx.Client(base_url=destination.url, transport=_PinnedTransport(destination, verify=True), timeout=TIMEOUT_SECONDS, follow_redirects=False, trust_env=False, headers={"Accept": "application/vnd.github+json", "User-Agent": f"FilterHelm/{__version__}"})`.
      Import `_PinnedTransport` from `app.pihole_client`.
    - `def fetch_latest_release() -> str | None` — opens the client in a `with` block and
@@ -147,12 +168,18 @@ Rejected alternatives:
      latest) and `_lock = threading.Lock()`.
    - `def check_for_update(*, clock: Callable[[], float] = time.monotonic) -> UpdateStatus`:
      1. If disabled, return `UpdateStatus(False, __version__, None, False)` with no fetch.
-     2. Under `_lock`, reuse the cache while `clock() < expires_at`.
-     3. Otherwise call `fetch_latest_release()`.
+     2. Try `_lock.acquire(blocking=False)`.
+        - If it fails, another request is refreshing. Take `latest` from `_cache` if set,
+          else None. Skip to step 5 without fetching.
+        - If it succeeds, do steps 3–4 and release the lock in a `finally`.
+     3. Reuse the cache while `clock() < expires_at`.
+     4. Otherwise call `fetch_latest_release()`.
         - On a str, cache it for `SUCCESS_TTL_SECONDS`.
         - On None or any exception, cache None for `FAILURE_TTL_SECONDS`. Log
           `logger.warning("update check failed: %s", type(exc).__name__)` for exceptions.
-     4. Set `update_available` to True only when both versions parse and latest > current.
+     5. Set `update_available` to True only when both versions parse and latest > current.
+   - Read `_cache` into a local once per call. Assigning the tuple is atomic, so the
+     lock-free read in step 2 sees either the old or the new tuple.
    - `def reset_cache() -> None` — clears `_cache`. Tests use it.
 
 3. **Route.** In `app/routes/api.py`, next to `VersionInfo`:
@@ -294,9 +321,24 @@ test, and tests pin `update_check.__version__` with monkeypatch.
   - `prerelease: true`
   - `draft: true`
 - `test_open_client_uses_pinned_policy_transport` — patch
-  `update_check.resolve_update_check_destination` to return a known destination. Assert the
-  client's transport is a `_PinnedTransport` with that destination, `follow_redirects` is
-  False, and `trust_env` is False.
+  `update_check.resolve_update_check_destination` with a fake that records its `resolver`
+  keyword and returns a known destination. Assert the recorded resolver is
+  `update_check._bounded_resolve`. Assert the client's transport is a `_PinnedTransport`
+  with that destination, `follow_redirects` is False, and `trust_env` is False. The
+  first-pass `lambda: destination` patch no longer fits the new call, so replace it.
+- `test_concurrent_caller_does_not_wait_for_refresh` (revision 1) — patch
+  `fetch_latest_release` to block on a `threading.Event`. Start `check_for_update()` in a
+  thread and wait until the fetch is entered. A second `check_for_update()` call on the main
+  thread returns within 1 second with `latest=None` and `update_available=False`. Then set
+  the event, join the thread, and assert the fetch ran exactly once.
+- `test_concurrent_caller_gets_stale_cache_during_refresh` (revision 1) — seed the cache
+  with `1.1.0` at t=0. Advance the clock past `SUCCESS_TTL_SECONDS` and block the refresh as
+  above. A concurrent call returns `latest="1.1.0"` without waiting.
+- `test_bounded_resolve_times_out` (revision 1) — set `update_check.TIMEOUT_SECONDS` to
+  0.1. Patch `update_check.socket.getaddrinfo` to block on an event. `_bounded_resolve`
+  raises `OSError` within 1 second. Release the event in a `finally` so the worker thread exits.
+- `test_bounded_resolve_returns_answers` (revision 1) — `getaddrinfo` is patched to return a
+  fixed answer list, and `_bounded_resolve` returns that list unchanged.
 
 `tests/test_api.py`:
 - `test_update_route_returns_status` — monkeypatch `api.check_for_update` to return a fixed
@@ -308,7 +350,8 @@ test, and tests pin `update_check.__version__` with monkeypatch.
 ## Invariants at risk
 
 - **4. No background scheduler.** The check runs only inside a user's `/api/update`
-  request. It adds no thread, timer, startup hook, or task. It never mutates a Pi-hole.
+  request. It adds no timer, startup hook, or task. The one-worker DNS executor runs only
+  lookups that a request submitted, and it never mutates a Pi-hole.
 - **5. FastAPI owns credentials and outbound access.** The browser calls only `/api/update`.
   No GitHub URL is fetched from the frontend. The bundle gains a link target, which
   `release.ts` already has, and no new connect target, so the CSP is unchanged.
@@ -325,8 +368,11 @@ test, and tests pin `update_check.__version__` with monkeypatch.
 ## Acceptance criteria
 
 - [ ] With the network up and no env override, a signed-in `GET /api/update` returns
-      `enabled: true` and `latest: "1.0.0"` (the current latest Release), and
+      `enabled: true` and `latest: "1.0.2"` (the current latest Release), and
       `update_available: false` while running 1.0.2.
+- [ ] While one refresh is stuck in DNS or HTTP, other `/api/update` calls return
+      immediately. `test_concurrent_caller_does_not_wait_for_refresh` covers this.
+- [ ] A hung DNS lookup ends the refresh within `TIMEOUT_SECONDS` and caches a failure.
 - [ ] With `__version__` temporarily set below the latest Release, the header shows a cyan
       up-arrow beside the version. Hovering it shows "FilterHelm X.Y.Z is available", and
       clicking it opens `https://github.com/nulthara/filterhelm/releases/tag/vX.Y.Z` in a
