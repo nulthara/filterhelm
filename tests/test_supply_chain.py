@@ -77,6 +77,10 @@ def test_pyproject_pins_match_lock() -> None:
         name, separator, version = dependency.partition("==")
         assert separator, f"Unpinned direct dependency: {dependency}"
         assert lock[normalize(name)] == version
+    for dependency in project["build-system"]["requires"]:
+        name, separator, version = dependency.partition("==")
+        assert separator, f"Unpinned build requirement: {dependency}"
+        assert lock[normalize(name)] == version
 
 
 def test_versions_agree() -> None:
