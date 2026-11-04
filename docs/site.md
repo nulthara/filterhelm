@@ -7,7 +7,7 @@ that directory or send it to the app deploy target.
 ## Local work
 
 Use Node 22, as pinned in `site/.node-version` (the installed Astro version requires
-22.22.0 or later).
+22.23.4 or later).
 
 ```bash
 cd site

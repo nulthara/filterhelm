@@ -90,7 +90,7 @@ self-hosters get them only through a `v*` tag.
 
 GHSA-g3hv-75wg-m249 is a DoS through glob-pattern amplification, fixed only in
 minimatch 11.0.1. The frontend reaches minimatch only through ESLint
-(`minimatch@3.1.5`) and `@typescript-eslint/typescript-estree` (`minimatch@10.2.6`).
+(minimatch 3.1.5) and `@typescript-eslint/typescript-estree` (minimatch 10.2.6).
 
 - No release of ESLint, including 10.x, accepts minimatch 11. Current ranges are `^3`,
   `^10.2.4` and `^10.2.6`.
@@ -116,6 +116,7 @@ Rejected alternatives:
 - `frontend/package-lock.json` — antd, vitest, typescript-eslint trees.
 - `requirements.lock` — cryptography, anyio; regenerated hashes.
 - `requirements-dev.lock` — pytest, pluggy, iniconfig; regenerated hashes.
+- `pyproject.toml` — `[project.optional-dependencies] dev` pytest pin (Revision 1).
 - Version files touched by `scripts/bump_version.py patch` (as in 0047).
 - `app/static/ui/` — rebuilt bundle.
 
@@ -138,6 +139,8 @@ Rejected alternatives:
 5. **Dev lock.** In `requirements-dev.lock`, change `pytest==9.1.1`, `pluggy==1.6.0`,
    `iniconfig==2.3.0` to `9.2.0`, `1.7.0`, `2.3.1`. Run
    `python3 scripts/lock_hashes.py requirements-dev.lock`. Only those three blocks may change.
+   Revision 1: also change `pyproject.toml` line 21 to `dev = ["pytest==9.2.0"]`.
+   `tests/test_supply_chain.py::test_dev_extra_matches_dev_lock` enforces this match.
 6. **Venv.** `./.venv/bin/pip install --uploaded-prior-to P1D --require-hashes -r requirements.lock -r requirements-dev.lock`,
    then `./.venv/bin/pip check`.
 7. **Version.** `./.venv/bin/python scripts/bump_version.py patch` must apply `1.0.4` and
