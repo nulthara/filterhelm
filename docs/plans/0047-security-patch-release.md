@@ -1,6 +1,6 @@
 # 0047 — Security patch release 1.0.3
 
-Status: in-review            <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0047-security-patch-release
 Author: Claude (architect)
 Date: 2026-10-29

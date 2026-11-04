@@ -1,6 +1,6 @@
 # 0048 — Assign groups on create; hide app fields from password managers
 
-Status: in-progress          <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped          <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0048-create-with-groups-and-password-manager-ignore
 Author: Kyrnveil
 Date: 2026-11-03

@@ -1,6 +1,6 @@
 # 0046 — App update indicator
 
-Status: in-progress        <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0046-app-update-indicator
 Author: Kyrnveil
 Date: 2026-10-25
