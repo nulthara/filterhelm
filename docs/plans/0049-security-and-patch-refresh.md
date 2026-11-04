@@ -190,6 +190,7 @@ No new tests. These existing tests must pass unchanged:
 - [ ] `./.venv/bin/pytest` and `FILTERHELM_REQUIRE_DENYLIST=1 ./.venv/bin/pytest` green.
 - [ ] `npm run build` + `npm run lint` + `npm test` clean; `app/static/ui/` committed.
 - [ ] Reviewer only: `podman build -t filterhelm:0049 .` succeeds. In the image,
-      `python -c "import cryptography, anyio; print(cryptography.__version__, anyio.__version__)"`
+      `python -c "from importlib.metadata import version as v; print(v('cryptography'), v('anyio'))"`
+      (anyio 4.16 no longer exposes `__version__`)
       prints `50.0.2 4.16.0`. The container starts, and `GET /api/auth/status` answers 200.
 - [ ] After merge (user): the next Cloudflare build log shows Node ≥ 22.23.4.
