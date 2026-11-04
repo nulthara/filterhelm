@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.audit import record
 from app.config import CredentialStore, Instance, load_instances
-from app.pihole_client import Domain, PiholeAPIError, PiholeClient
+from app.pihole_client import Domain, PiholeAPIError, PiholeClient, group_ids_for_names
 
 logger = logging.getLogger(__name__)
 
@@ -132,12 +132,27 @@ def _match_domain(items: Sequence[Domain], domain: str, type: str, kind: str) ->
     return matches[0] if matches else None
 
 
+def _validate_group_names(value: list[str] | None) -> list[str] | None:
+    if value is None:
+        return None
+    names = [name.strip() for name in value]
+    if any(not 1 <= len(name) <= 100 for name in names):
+        raise ValueError("Group names must be 1-100 characters")
+    return list(dict.fromkeys(names))
+
+
 class DomainAddInput(BaseModel):
     instances: list[str] = Field(min_length=1, max_length=100)
     domain: str = Field(min_length=1, max_length=1000)
     type: Literal["allow", "deny"]
     kind: Literal["exact", "regex"]
     comment: str = Field(default="", max_length=1000)
+    groups: list[str] | None = Field(default=None, min_length=1, max_length=100)
+
+    @field_validator("groups")
+    @classmethod
+    def validate_group_names(cls, value: list[str] | None) -> list[str] | None:
+        return _validate_group_names(value)
 
     @model_validator(mode="after")
     def validate_domain(self):
@@ -257,7 +272,8 @@ def domain_add(payload: DomainAddInput):
     for name in names:
         try:
             with _client(configured[name]) as client:
-                client.add_domain(payload.domain, payload.type, payload.kind, payload.comment)
+                group_ids = [0] if payload.groups is None else group_ids_for_names(client.get_groups(), payload.groups)
+                client.add_domain(payload.domain, payload.type, payload.kind, payload.comment, groups=group_ids)
             _audit_landed_write(
                 name,
                 "domain_add",
@@ -268,6 +284,7 @@ def domain_add(payload: DomainAddInput):
                     "kind": payload.kind,
                     "comment": payload.comment,
                     "enabled": True,
+                    "groups": group_ids,
                 },
             )
             results.append({"name": name, "success": True, "error": None})

@@ -968,3 +968,34 @@ def test_run_action_4xx_is_a_definite_refusal(monkeypatch, status_code):
         assert "sensitive upstream details" not in str(caught.value)
     finally:
         client._client.close()
+
+
+def test_group_ids_for_names_resolves_in_order():
+    groups = [Group(0, "Default", "", True, None, None), Group(3, "Kids", "", True, None, None)]
+    assert pihole_client.group_ids_for_names(groups, ["Kids", "Default", "Kids"]) == [3, 0]
+
+
+@pytest.mark.parametrize("name", ["Missing", "kids", "No ID"])
+def test_group_ids_for_names_missing_name_raises(name):
+    groups = [Group(3, "Kids", "", True, None, None), Group(None, "No ID", "", True, None, None)]
+    with pytest.raises(pihole_client.PiholeAPIError, match="^Selected group not found on this instance$"):
+        pihole_client.group_ids_for_names(groups, [name])
+
+
+@pytest.mark.parametrize("method,args", [("add_domain", ("ads.example", "deny", "exact")), ("add_adlist", ("https://example.com/list",)), ("add_client", ("host",))])
+@pytest.mark.parametrize("groups", [None, [0, 7]])
+def test_add_sends_selected_groups(monkeypatch, method, args, groups):
+    monkeypatch.setattr(pihole_client, "resolve_instance_destination", private_destination)
+    bodies = []
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(201)
+    client = pihole_client.PiholeClient("http://pihole.lan", "secret")
+    client._client.close()
+    client._client = httpx.Client(base_url="http://pihole.lan", transport=httpx.MockTransport(handler))
+    client._session = Session("sid", "csrf")
+    try:
+        getattr(client, method)(*args, **({} if groups is None else {"groups": groups}))
+        assert bodies[0]["groups"] == ([0] if groups is None else groups)
+    finally:
+        client._client.close()

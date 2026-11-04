@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.audit import record
 from app.config import CredentialStore, Instance, load_instances
-from app.pihole_client import Client, PiholeAPIError, PiholeClient
+from app.pihole_client import Client, PiholeAPIError, PiholeClient, group_ids_for_names
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +72,25 @@ def _validate_client_identifier(value: str) -> str:
     return value
 
 
+def _validate_group_names(value: list[str] | None) -> list[str] | None:
+    if value is None:
+        return None
+    names = [name.strip() for name in value]
+    if any(not 1 <= len(name) <= 100 for name in names):
+        raise ValueError("Group names must be 1-100 characters")
+    return list(dict.fromkeys(names))
+
+
 class ClientAddInput(BaseModel):
     instances: list[str] = Field(min_length=1, max_length=100)
     client: str = Field(min_length=1, max_length=253)
     comment: str = Field(default="", max_length=1000)
+    groups: list[str] | None = Field(default=None, min_length=1, max_length=100)
+
+    @field_validator("groups")
+    @classmethod
+    def validate_group_names(cls, value: list[str] | None) -> list[str] | None:
+        return _validate_group_names(value)
 
     @field_validator("client")
     @classmethod
@@ -160,8 +175,9 @@ def client_add(payload: ClientAddInput):
     for name in names:
         try:
             with _client(configured[name]) as client:
-                client.add_client(payload.client, payload.comment)
-            _audit_landed_write(name, "client_add", {}, {"client": payload.client, "comment": payload.comment, "groups": [0]})
+                group_ids = [0] if payload.groups is None else group_ids_for_names(client.get_groups(), payload.groups)
+                client.add_client(payload.client, payload.comment, groups=group_ids)
+            _audit_landed_write(name, "client_add", {}, {"client": payload.client, "comment": payload.comment, "groups": group_ids})
             results.append({"name": name, "success": True, "error": None})
         except HTTPException as exc:
             results.append({"name": name, "success": False, "error": str(exc.detail)})

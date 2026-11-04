@@ -115,11 +115,13 @@ export default function App() {
             ) : auth?.mode === 'proxy' ? (
               <Alert type="info" showIcon message="Authenticate through the configured reverse proxy, then reload this page." />
             ) : (
+              <div data-password-manager="allow">
               <Form form={loginForm} layout="vertical" onFinish={() => void login()}>
                 <Form.Item name="username" label="Username" rules={[{ required: true }]}><Input autoComplete="username" autoFocus /></Form.Item>
                 <Form.Item name="password" label="Password" rules={[{ required: true }]}><Input.Password autoComplete="current-password" /></Form.Item>
                 <Button type="primary" htmlType="submit" loading={loggingIn} block>Sign in</Button>
               </Form>
+              </div>
             )}
           </Card>
         </Content>

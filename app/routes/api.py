@@ -35,7 +35,7 @@ from app.config import (
     instances_mutation,
     save_instances,
 )
-from app.pihole_client import Adlist, DatabaseInfo, FtlAction, FtlInfo, PiholeActionUnconfirmedError, PiholeAPIError, PiholeClient, SensorsInfo, SystemInfo
+from app.pihole_client import Adlist, DatabaseInfo, FtlAction, FtlInfo, PiholeActionUnconfirmedError, PiholeAPIError, PiholeClient, SensorsInfo, SystemInfo, group_ids_for_names
 from app.settings_fields import MANAGED_FIELDS, display_setting, get_setting, normalize_setting, set_setting
 from app.url_policy import (
     normalize_instance_url,
@@ -259,10 +259,25 @@ class CNAMERecordBulkInput(BaseModel):
     records: list[CNAMERecordRef] = Field(min_length=1, max_length=200)
 
 
+def _validate_group_names(value: list[str] | None) -> list[str] | None:
+    if value is None:
+        return None
+    names = [name.strip() for name in value]
+    if any(not 1 <= len(name) <= 100 for name in names):
+        raise ValueError("Group names must be 1-100 characters")
+    return list(dict.fromkeys(names))
+
+
 class AdlistAddInput(BaseModel):
     instances: list[str] = Field(min_length=1, max_length=100)
     address: str = Field(min_length=1, max_length=2048)
     comment: str = Field(default="", max_length=1000)
+    groups: list[str] | None = Field(default=None, min_length=1, max_length=100)
+
+    @field_validator("groups")
+    @classmethod
+    def validate_group_names(cls, value: list[str] | None) -> list[str] | None:
+        return _validate_group_names(value)
 
     @field_validator("address")
     @classmethod
@@ -930,9 +945,10 @@ def adlist_add(payload: AdlistAddInput):
     for name in names:
         try:
             with _client(configured[name]) as client:
-                client.add_adlist(payload.address, payload.comment)
+                group_ids = [0] if payload.groups is None else group_ids_for_names(client.get_groups(), payload.groups)
+                client.add_adlist(payload.address, payload.comment, groups=group_ids)
             mark_gravity_pending(name)
-            _audit_landed_write(name, "adlist_add", {}, {"address": payload.address, "comment": payload.comment, "enabled": True})
+            _audit_landed_write(name, "adlist_add", {}, {"address": payload.address, "comment": payload.comment, "enabled": True, "groups": group_ids})
             results.append({"name": name, "success": True, "error": None})
         except HTTPException as exc:
             results.append({"name": name, "success": False, "error": str(exc.detail)})

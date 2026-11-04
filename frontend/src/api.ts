@@ -643,9 +643,9 @@ export const api = {
     errors: Record<string, string>
     gravity_pending: string[]
   }>('/api/adlists'),
-  addAdlist: (instances: string[], address: string, comment: string) =>
+  addAdlist: (instances: string[], address: string, comment: string, groups?: string[]) =>
     request<{ results: Array<{ name: string; success: boolean; error: string | null }> }>('/api/adlists', {
-      method: 'POST', body: JSON.stringify({ instances, address, comment }),
+      method: 'POST', body: JSON.stringify({ instances, address, comment, ...(groups ? { groups } : {}) }),
     }),
   updateAdlist: (instance: string, address: string, enabled?: boolean, groups?: number[]) =>
     request<{ instance: string; address: string; enabled: boolean; groups: number[]; gravity_pending: boolean }>(`/api/adlists/${encodeURIComponent(instance)}`, {
@@ -667,9 +667,9 @@ export const api = {
       `/api/lookup?domain=${encodeURIComponent(domain)}&partial=${partial}`,
       { signal },
     ),
-  addDomain: (instances: string[], domain: string, type: 'allow' | 'deny', kind: 'exact' | 'regex', comment: string) =>
+  addDomain: (instances: string[], domain: string, type: 'allow' | 'deny', kind: 'exact' | 'regex', comment: string, groups?: string[]) =>
     request<{ results: Array<{ name: string; success: boolean; error: string | null }> }>('/api/domains', {
-      method: 'POST', body: JSON.stringify({ instances, domain, type, kind, comment }),
+      method: 'POST', body: JSON.stringify({ instances, domain, type, kind, comment, ...(groups ? { groups } : {}) }),
     }),
   updateDomain: (instance: string, domain: string, type: 'allow' | 'deny', kind: 'exact' | 'regex', enabled?: boolean, groups?: number[]) =>
     request<{ instance: string; domain: string; type: string; kind: string; enabled: boolean; groups: number[] }>(
@@ -710,9 +710,9 @@ export const api = {
     clients: ClientRow[]
     errors: Record<string, string>
   }>('/api/clients'),
-  addClient: (instances: string[], client: string, comment: string) =>
+  addClient: (instances: string[], client: string, comment: string, groups?: string[]) =>
     request<{ results: Array<{ name: string; success: boolean; error: string | null }> }>('/api/clients', {
-      method: 'POST', body: JSON.stringify({ instances, client, comment }),
+      method: 'POST', body: JSON.stringify({ instances, client, comment, ...(groups ? { groups } : {}) }),
     }),
   updateClientGroups: (instance: string, client: string, groups: number[]) =>
     request<{ instance: string; client: string; groups: number[] }>(

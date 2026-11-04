@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.config import Instance
-from app.pihole_client import Domain, PiholeAPIError
+from app.pihole_client import Domain, PiholeAPIError, Group
 from app.routes import domains
 
 
@@ -39,14 +39,14 @@ class FakeDomainsPiholeClient:
             raise httpx.ConnectError("boom")
         return self.items.get(self.name, []).copy()
 
-    def add_domain(self, domain, type, kind, comment=""):
+    def add_domain(self, domain, type, kind, comment="", groups=(0,)):
         if self.name in self.transport_fail_add:
             raise httpx.ConnectError("boom")
         if self.name in self.fail_add:
             raise PiholeAPIError("domain add failed")
-        self.added.append((self.name, domain, type, kind, comment))
+        self.added.append((self.name, domain, type, kind, comment, list(groups)))
         self.items.setdefault(self.name, []).append(
-            Domain(None, domain, type, kind, comment, True, (0,), None, None)
+            Domain(None, domain, type, kind, comment, True, tuple(groups), None, None)
         )
 
     def update_domain(self, item, *, enabled, groups):
@@ -149,7 +149,7 @@ def test_domain_add_reports_per_instance_results(monkeypatch):
     assert [item["success"] for item in result["results"]] == [True, False]
     assert result["results"][1]["error"] == "domain add failed"
     assert FakeDomainsPiholeClient.added == [
-        ("pihole1", "ads.example.com", "deny", "exact", "New")
+        ("pihole1", "ads.example.com", "deny", "exact", "New", [0])
     ]
 
 
@@ -651,3 +651,51 @@ def test_domain_single_routes_report_success_when_audit_fails(monkeypatch, caplo
             assert fake.items["pihole1"] == []
     assert 200 <= response.status_code < 300
     assert any(item.name == domains.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)
+
+
+
+@pytest.mark.parametrize("bad", [[], [""], ["   "], ["x" * 101], ["Kids"] * 101])
+def test_domain_add_input_rejects_empty_groups(bad):
+    with pytest.raises(ValidationError):
+        domains.DomainAddInput(instances=["pihole1"], domain="ads.example", type="deny", kind="exact", groups=bad)
+    assert domains.DomainAddInput(instances=["pihole1"], domain="ads.example", type="deny", kind="exact", groups=[" Kids ", "Kids"]).groups == ["Kids"]
+
+
+def _assert_domain_add_groups(monkeypatch, missing):
+    setup_domains(monkeypatch)
+    instances = [Instance(name=name, base_url="http://" + name) for name in ["pihole1", "pihole2"]]
+    monkeypatch.setattr(domains, "load_instances", lambda: instances)
+    writes, audits, pending, lookups = [], [], [], []
+    def get_groups(self):
+        lookups.append(self.name)
+        return [] if missing and self.name == "pihole2" else [Group(3 if self.name == "pihole1" else 7, "Kids", "", True, None, None)]
+    monkeypatch.setattr(FakeDomainsPiholeClient, "get_groups", get_groups, raising=False)
+    monkeypatch.setattr(FakeDomainsPiholeClient, "add_domain", lambda self, *args, groups=(0,): writes.append((self.name, list(groups))))
+    monkeypatch.setattr(domains, "record", lambda *args: audits.append(args))
+    result = domains.domain_add(domains.DomainAddInput(instances=["pihole1", "pihole2"], domain="ads.example", type="deny", kind="exact", groups=["Kids"]))
+    assert writes == ([("pihole1", [3])] if missing else [("pihole1", [3]), ("pihole2", [7])])
+    assert [entry[3]["groups"] for entry in audits] == ([ [3] ] if missing else [[3], [7]])
+    assert lookups == ["pihole1", "pihole2"]
+    assert [r["success"] for r in result["results"]] == [True, not missing]
+    if missing:
+        assert result["results"][1]["error"] == "Selected group not found on this instance"
+
+
+def test_domain_add_without_groups_uses_default_and_skips_lookup(monkeypatch):
+    setup_domains(monkeypatch)
+    writes = []
+    def unexpected_lookup(self):
+        raise AssertionError("groups lookup must be skipped")
+    monkeypatch.setattr(FakeDomainsPiholeClient, "get_groups", unexpected_lookup, raising=False)
+    monkeypatch.setattr(FakeDomainsPiholeClient, "add_domain", lambda self, *args, groups=(0,): writes.append(list(groups)))
+    result = domains.domain_add(domains.DomainAddInput(instances=["pihole1"], domain="ads.example", type="deny", kind="exact"))
+    assert result["results"][0]["success"] is True
+    assert writes == [[0]]
+
+
+def test_domain_add_with_groups_resolves_per_instance(monkeypatch):
+    _assert_domain_add_groups(monkeypatch, False)
+
+
+def test_domain_add_missing_group_fails_only_that_instance(monkeypatch):
+    _assert_domain_add_groups(monkeypatch, True)

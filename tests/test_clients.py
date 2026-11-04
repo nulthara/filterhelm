@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.config import Instance
-from app.pihole_client import Client, PiholeAPIError
+from app.pihole_client import Client, PiholeAPIError, Group
 from app.routes import clients
 
 
@@ -27,11 +27,11 @@ class FakeClientsPiholeClient:
         if self.name in self.unreachable:
             raise httpx.ConnectError("boom")
         return self.items.get(self.name, []).copy()
-    def add_client(self, identifier, comment=""):
+    def add_client(self, identifier, comment="", groups=(0,)):
         if self.name in self.transport_fail_add:
             raise httpx.ConnectError("boom")
         if self.name in self.fail_add: raise PiholeAPIError("client add failed")
-        self.added.append((self.name, identifier, comment, [0])); self.items.setdefault(self.name, []).append(make_client(identifier, comment=comment))
+        self.added.append((self.name, identifier, comment, list(groups))); self.items.setdefault(self.name, []).append(make_client(identifier, comment=comment, groups=tuple(groups)))
     def update_client(self, item, *, groups):
         if self.name in self.fail_write:
             raise self.fail_write[self.name]
@@ -167,3 +167,51 @@ def test_client_routes_report_success_when_audit_fails(monkeypatch, caplog, oper
             assert fake.items["pihole1"] == []
     assert 200 <= response.status_code < 300
     assert any(item.name == clients.__name__ and item.exc_info and "audit write failed" in item.message for item in caplog.records)
+
+
+
+@pytest.mark.parametrize("bad", [[], [""], ["   "], ["x" * 101], ["Kids"] * 101])
+def test_client_add_input_rejects_empty_groups(bad):
+    with pytest.raises(ValidationError):
+        clients.ClientAddInput(instances=["pihole1"], client="host", groups=bad)
+    assert clients.ClientAddInput(instances=["pihole1"], client="host", groups=[" Kids ", "Kids"]).groups == ["Kids"]
+
+
+def _assert_client_add_groups(monkeypatch, missing):
+    setup_clients(monkeypatch)
+    instances = [Instance(name=name, base_url="http://" + name) for name in ["pihole1", "pihole2"]]
+    monkeypatch.setattr(clients, "load_instances", lambda: instances)
+    writes, audits, pending, lookups = [], [], [], []
+    def get_groups(self):
+        lookups.append(self.name)
+        return [] if missing and self.name == "pihole2" else [Group(3 if self.name == "pihole1" else 7, "Kids", "", True, None, None)]
+    monkeypatch.setattr(FakeClientsPiholeClient, "get_groups", get_groups, raising=False)
+    monkeypatch.setattr(FakeClientsPiholeClient, "add_client", lambda self, *args, groups=(0,): writes.append((self.name, list(groups))))
+    monkeypatch.setattr(clients, "record", lambda *args: audits.append(args))
+    result = clients.client_add(clients.ClientAddInput(instances=["pihole1", "pihole2"], client="host", groups=["Kids"]))
+    assert writes == ([("pihole1", [3])] if missing else [("pihole1", [3]), ("pihole2", [7])])
+    assert [entry[3]["groups"] for entry in audits] == ([ [3] ] if missing else [[3], [7]])
+    assert lookups == ["pihole1", "pihole2"]
+    assert [r["success"] for r in result["results"]] == [True, not missing]
+    if missing:
+        assert result["results"][1]["error"] == "Selected group not found on this instance"
+
+
+def test_client_add_without_groups_uses_default_and_skips_lookup(monkeypatch):
+    setup_clients(monkeypatch)
+    writes = []
+    def unexpected_lookup(self):
+        raise AssertionError("groups lookup must be skipped")
+    monkeypatch.setattr(FakeClientsPiholeClient, "get_groups", unexpected_lookup, raising=False)
+    monkeypatch.setattr(FakeClientsPiholeClient, "add_client", lambda self, *args, groups=(0,): writes.append(list(groups)))
+    result = clients.client_add(clients.ClientAddInput(instances=["pihole1"], client="host"))
+    assert result["results"][0]["success"] is True
+    assert writes == [[0]]
+
+
+def test_client_add_with_groups_resolves_per_instance(monkeypatch):
+    _assert_client_add_groups(monkeypatch, False)
+
+
+def test_client_add_missing_group_fails_only_that_instance(monkeypatch):
+    _assert_client_add_groups(monkeypatch, True)

@@ -85,6 +85,7 @@ import ipaddress
 import math
 import tomllib
 import zipfile
+from collections.abc import Sequence
 from typing import Any, Literal
 from urllib.parse import quote
 
@@ -399,6 +400,18 @@ class Client:
     date_modified: int | None
 
 
+def group_ids_for_names(groups: Sequence[Group], names: Sequence[str]) -> list[int]:
+    ids_by_name = {group.name: group.id for group in groups if group.id is not None}
+    result: list[int] = []
+    for name in names:
+        if name not in ids_by_name:
+            raise PiholeAPIError("Selected group not found on this instance")
+        group_id = ids_by_name[name]
+        if group_id not in result:
+            result.append(group_id)
+    return result
+
+
 class PiholeClient:
     """One short-lived client per operation. Always used as a context manager
     so the session is released (`DELETE /api/auth`) even on error — an
@@ -549,11 +562,11 @@ class PiholeClient:
             )
         return result
 
-    def add_adlist(self, address: str, comment: str = "") -> None:
+    def add_adlist(self, address: str, comment: str = "", groups: Sequence[int] = (0,)) -> None:
         resp = self._client.post(
             "/api/lists",
             params={"type": "block"},
-            json={"address": address, "comment": comment, "enabled": True, "groups": [0]},
+            json={"address": address, "comment": comment, "enabled": True, "groups": list(groups)},
             headers=self._auth_headers(),
         )
         if resp.status_code not in (200, 201):
@@ -883,11 +896,11 @@ class PiholeClient:
             raise PiholeAPIError("Pi-hole search endpoint returned invalid result counts")
         return SearchResult(domains, tuple(gravity), SearchCounts(*counts))
 
-    def add_domain(self, domain: str, type: str, kind: str, comment: str = "") -> None:
+    def add_domain(self, domain: str, type: str, kind: str, comment: str = "", groups: Sequence[int] = (0,)) -> None:
         path = f"/api/domains/{quote(type, safe='')}/{quote(kind, safe='')}"
         resp = self._client.post(
             path,
-            json={"domain": domain, "comment": comment, "enabled": True, "groups": [0]},
+            json={"domain": domain, "comment": comment, "enabled": True, "groups": list(groups)},
             headers=self._auth_headers(),
         )
         if resp.status_code not in (200, 201):
@@ -978,8 +991,8 @@ class PiholeClient:
             ))
         return result
 
-    def add_client(self, client: str, comment: str = "") -> None:
-        resp = self._client.post("/api/clients", json={"client": client, "comment": comment, "groups": [0]}, headers=self._auth_headers())
+    def add_client(self, client: str, comment: str = "", groups: Sequence[int] = (0,)) -> None:
+        resp = self._client.post("/api/clients", json={"client": client, "comment": comment, "groups": list(groups)}, headers=self._auth_headers())
         if resp.status_code not in (200, 201):
             raise PiholeAPIError(f"POST /api/clients failed with HTTP {resp.status_code}")
 

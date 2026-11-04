@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from app import pihole_client
 from app.config import Instance
-from app.pihole_client import Adlist, BlockingState, PiholeAPIError, SystemInfo, FtlInfo, DatabaseInfo, SensorsInfo
+from app.pihole_client import Adlist, BlockingState, PiholeAPIError, SystemInfo, FtlInfo, DatabaseInfo, SensorsInfo, Group
 from app.main import app, index
 from app.routes import api
 from app.url_policy import URLPolicyError
@@ -97,8 +97,8 @@ class FakePiholeClient:
         "docker": {"local": None, "remote": None},
     }
 
-    def __init__(self, *_args, **_kwargs):
-        pass
+    def __init__(self, base_url="http://pihole1", *_args, **_kwargs):
+        self.name = base_url.removeprefix("http://")
 
     def __enter__(self):
         return self
@@ -143,8 +143,8 @@ class FakePiholeClient:
     def get_adlists(self):
         return self.adlists.copy()
 
-    def add_adlist(self, address, comment=""):
-        self.adlists.append(Adlist(address, comment, True, (0,), None, None, None))
+    def add_adlist(self, address, comment="", groups=(0,)):
+        self.adlists.append(Adlist(address, comment, True, tuple(groups), None, None, None))
         FakePiholeClient.adlists = self.adlists
 
     def update_adlist(self, adlist, *, enabled, groups):
@@ -2932,3 +2932,54 @@ def test_update_route_returns_status(monkeypatch):
     assert api.update().model_dump() == {
         'enabled': True, 'current': '1.0.2', 'latest': '1.1.0', 'update_available': True,
     }
+
+
+
+@pytest.mark.parametrize("bad", [[], [""], ["   "], ["x" * 101], ["Kids"] * 101])
+def test_adlist_add_input_rejects_empty_groups(bad):
+    with pytest.raises(ValidationError):
+        api.AdlistAddInput(instances=["pihole1"], address="https://example.com/list", groups=bad)
+    assert api.AdlistAddInput(instances=["pihole1"], address="https://example.com/list", groups=[" Kids ", "Kids"]).groups == ["Kids"]
+
+
+def _assert_adlist_add_groups(monkeypatch, missing):
+    _, credentials = setup_api(monkeypatch)
+    credentials.set("pihole2", "secret")
+    instances = [Instance(name=name, base_url="http://" + name) for name in ["pihole1", "pihole2"]]
+    monkeypatch.setattr(api, "load_instances", lambda: instances)
+    writes, audits, pending, lookups = [], [], [], []
+    def get_groups(self):
+        lookups.append(self.name)
+        return [] if missing and self.name == "pihole2" else [Group(3 if self.name == "pihole1" else 7, "Kids", "", True, None, None)]
+    monkeypatch.setattr(FakePiholeClient, "get_groups", get_groups, raising=False)
+    monkeypatch.setattr(FakePiholeClient, "add_adlist", lambda self, *args, groups=(0,): writes.append((self.name, list(groups))))
+    monkeypatch.setattr(api, "record", lambda *args: audits.append(args))
+    monkeypatch.setattr(api, "mark_gravity_pending", pending.append)
+    result = api.adlist_add(api.AdlistAddInput(instances=["pihole1", "pihole2"], address="https://example.com/list", groups=["Kids"]))
+    assert writes == ([("pihole1", [3])] if missing else [("pihole1", [3]), ("pihole2", [7])])
+    assert [entry[3]["groups"] for entry in audits] == ([ [3] ] if missing else [[3], [7]])
+    assert lookups == ["pihole1", "pihole2"]
+    assert [r["success"] for r in result["results"]] == [True, not missing]
+    if missing:
+        assert result["results"][1]["error"] == "Selected group not found on this instance"
+    assert pending == (["pihole1"] if missing else ["pihole1", "pihole2"])
+
+
+def test_adlist_add_without_groups_uses_default_and_skips_lookup(monkeypatch):
+    setup_api(monkeypatch)
+    writes = []
+    def unexpected_lookup(self):
+        raise AssertionError("groups lookup must be skipped")
+    monkeypatch.setattr(FakePiholeClient, "get_groups", unexpected_lookup, raising=False)
+    monkeypatch.setattr(FakePiholeClient, "add_adlist", lambda self, *args, groups=(0,): writes.append(list(groups)))
+    result = api.adlist_add(api.AdlistAddInput(instances=["pihole1"], address="https://example.com/list"))
+    assert result["results"][0]["success"] is True
+    assert writes == [[0]]
+
+
+def test_adlist_add_with_groups_resolves_per_instance(monkeypatch):
+    _assert_adlist_add_groups(monkeypatch, False)
+
+
+def test_adlist_add_missing_group_fails_only_that_instance(monkeypatch):
+    _assert_adlist_add_groups(monkeypatch, True)
