@@ -4,16 +4,38 @@ import { ALLOW_SELECTOR, markIgnoredFields, PASSWORD_MANAGER_IGNORE_ATTRIBUTES, 
 class FakeElement {
   attributes = new Map<string, string>()
   children: FakeElement[] = []
+  tagName = 'INPUT'
   constructor(public field = true, public allowed = false) {}
   closest(selector: string) { expect(selector).toBe(ALLOW_SELECTOR); return this.allowed ? this : null }
   matches(selector: string) { expect(selector).toBe('input, textarea, select'); return this.field }
   hasAttribute(name: string) { return this.attributes.has(name) }
+  getAttribute(name: string) { return this.attributes.get(name) ?? null }
   setAttribute(name: string, value: string) { this.attributes.set(name, value) }
   querySelectorAll() { return this.children }
 }
 const mark = (root: FakeElement) => markIgnoredFields(root as unknown as HTMLElement)
 
 describe('password manager ignore', () => {
+  it.each([
+    ['text', 'new-password', false, 'INPUT', 'off'],
+    ['text', ' section-example\tNEW-PASSWORD\n', false, 'INPUT', 'off'],
+    [null, 'new-password', false, 'INPUT', 'off'],
+    ['password', 'new-password', false, 'INPUT', 'new-password'],
+    ['PASSWORD', 'new-password', false, 'INPUT', 'new-password'],
+    ['text', 'username', false, 'INPUT', 'username'],
+    ['text', 'not-new-password', false, 'INPUT', 'not-new-password'],
+    ['text', null, false, 'INPUT', null],
+    ['text', 'new-password', true, 'INPUT', 'new-password'],
+    [null, 'new-password', false, 'TEXTAREA', 'new-password'],
+    [null, 'new-password', false, 'SELECT', 'new-password'],
+  ])('handles autocomplete for type=%s value=%s allowed=%s tag=%s', (type, autocomplete, allowed, tagName, expected) => {
+    const field = new FakeElement(true, allowed)
+    field.tagName = tagName
+    if (type !== null) field.setAttribute('type', type)
+    if (autocomplete !== null) field.setAttribute('autocomplete', autocomplete)
+    mark(field)
+    expect(field.getAttribute('autocomplete')).toBe(expected)
+  })
   it('stamps fields outside the allow wrapper while preserving existing values', () => {
     const root = new FakeElement(false)
     const field = new FakeElement()

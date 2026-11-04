@@ -7,6 +7,11 @@ export function markIgnoredFields(root: ParentNode & Partial<Element>): void {
   if (root.matches?.(selector)) fields.push(root as Element)
   for (const field of fields) {
     if (field.closest(ALLOW_SELECTOR) !== null) continue
+    if (field.tagName.toLowerCase() === 'input'
+      && field.getAttribute('type')?.toLowerCase() !== 'password'
+      && field.getAttribute('autocomplete')?.toLowerCase().split(/\s+/).includes('new-password')) {
+      field.setAttribute('autocomplete', 'off')
+    }
     for (const attribute of PASSWORD_MANAGER_IGNORE_ATTRIBUTES) {
       if (!field.hasAttribute(attribute)) field.setAttribute(attribute, 'true')
     }
