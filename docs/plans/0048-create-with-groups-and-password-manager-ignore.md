@@ -103,6 +103,31 @@ Rejected alternatives:
 - Per-field `data-bwignore` props. They cannot reach AntD `Select`'s inner input and need
   every future field to remember them.
 
+Revision 1 (manual Bitwarden check failed): The first pass shipped the attributes, and
+Bitwarden still offered logins and generated passwords on the Instances select. Two facts
+in current sources explain it.
+
+- Bitwarden now honors `data-bwignore` only when the user enables an opt-in setting,
+  which is off by default (`honorBitwardenIgnoreAttribute` in
+  `collect-autofill-content.service.ts`). The attribute does nothing for most users.
+- AntD 6's Select renders its inner input as `type="text"` with a hardcoded
+  `autocomplete="new-password"` (`@rc-component/select/es/SelectInput/Input.js`). No
+  Select prop overrides it. Bitwarden's `isLikePasswordField` treats any text input with a
+  `new-password` token as a password field. So every Select looks like a new-password
+  field, which triggers the generator and, on submit, the save-login prompt.
+
+The fix rewrites the misleading token at the DOM level. The same stamping helper sets
+`autocomplete="off"` on any non-`password` input whose `autocomplete` contains
+`new-password`, outside the allow wrapper. React sets that attribute only on mount and
+when the prop changes, and rc-select's value is constant, so the rewrite sticks. The
+`data-*` attributes stay because they help users who opt in and other managers.
+`autocomplete="off"` alone does not stop Bitwarden from recognizing a field, but here it
+only has to remove the false password signal.
+
+Revision 1 does not fix the Instances app-password field, which is a real
+`type="password"` input. Bitwarden may still offer to generate or save there. That residual
+was already accepted in Scope.
+
 ## Files
 
 - `app/pihole_client.py` — `group_ids_for_names`; `groups` kwarg on `add_domain`,
@@ -208,6 +233,12 @@ Rejected alternatives:
     The existing `autoComplete="username"` / `"current-password"` props stay.
 12. **Build.** `cd frontend && npm run build && npm run lint && npm test`; commit
     `app/static/ui/`.
+13. **Revision 1 — neutralize `new-password` on non-password inputs.** In
+    `markIgnoredFields`, for each field outside the allow wrapper that is an `input` whose
+    `type` attribute is not `password`, and whose `autocomplete` attribute contains the
+    token `new-password` (split on whitespace, case-insensitive), set `autocomplete` to
+    `off`. Leave `type="password"` inputs and every other `autocomplete` value unchanged.
+    Rebuild and commit `app/static/ui/`.
 
 ## Contracts
 
@@ -293,6 +324,11 @@ Frontend (vitest, node environment — no new dependency):
   `hasAttribute`, `setAttribute`, `matches`) and a fake root: fields outside the allow
   wrapper receive all three attributes; fields inside it receive none; a pre-existing
   attribute value is not overwritten; the root itself is stamped when it is an `input`.
+- `passwordManagerIgnore.test.ts` (Revision 1) — the fake element gains `tagName` and
+  `getAttribute`. A text input with `autocomplete="new-password"` ends with
+  `autocomplete="off"`. A `type="password"` input with `new-password` keeps it. A text
+  input with `autocomplete="username"` keeps it. A `new-password` text input inside the
+  allow wrapper keeps it.
 
 ## Invariants at risk
 
@@ -331,6 +367,9 @@ Frontend (vitest, node environment — no new dependency):
 - [ ] In the built app, every `input`, `textarea` and `select` outside the sign-in form,
       including those inside open modals, carries `data-bwignore`, `data-1p-ignore` and
       `data-lpignore`. The sign-in fields carry none of them.
+- [ ] (Revision 1) In the built app, no non-password input outside the sign-in form has
+      `autocomplete` containing `new-password`. AntD Select inputs show
+      `autocomplete="off"`.
 - [ ] Manual check with Bitwarden installed: no inline menu or generated-password offer
       on the Add-modal Instances select, and no "Save login?" after adding a domain.
       Sign-in autofill still works. (The Instances app-password form may still trigger
