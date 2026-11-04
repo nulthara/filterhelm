@@ -1,6 +1,6 @@
 # 0049 — Security and patch refresh, release 1.0.4
 
-Status: in-progress          <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped          <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0049-security-and-patch-refresh
 Author: Claude (architect)
 Date: 2026-11-04
