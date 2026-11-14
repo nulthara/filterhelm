@@ -388,7 +388,7 @@ HEALTH_LOAD_WARNING_PER_CORE = 1.0
 HEALTH_LOAD_CRITICAL_PER_CORE = 2.0
 
 
-def _health_status(system: SystemInfo, sensors: SensorsInfo | None) -> tuple[
+def _health_status(system: SystemInfo | None, sensors: SensorsInfo | None) -> tuple[
     Literal["healthy", "warning", "critical"], list[str],
 ]:
     reasons: list[str] = []
@@ -405,42 +405,46 @@ def _health_status(system: SystemInfo, sensors: SensorsInfo | None) -> tuple[
                 f"Temperature {value:.0f} °{unit} is within {HEALTH_TEMPERATURE_WARNING_MARGIN:.0f} °{unit} "
                 f"of the {limit:.0f} °{unit} limit"
             )
-    if system.ram_percent >= HEALTH_RAM_CRITICAL_PERCENT:
-        critical = True
-        reasons.append(f"RAM {system.ram_percent:.1f}% used, at or above {HEALTH_RAM_CRITICAL_PERCENT:.0f}%")
-    elif system.ram_percent >= HEALTH_RAM_WARNING_PERCENT:
+    if system is None:
         warning = True
-        reasons.append(f"RAM {system.ram_percent:.1f}% used, at or above {HEALTH_RAM_WARNING_PERCENT:.0f}%")
-    if system.swap_percent >= HEALTH_SWAP_WARNING_PERCENT:
-        warning = True
-        reasons.append(f"Swap {system.swap_percent:.1f}% used, at or above {HEALTH_SWAP_WARNING_PERCENT:.0f}%")
-    if system.cores > 0:
-        load = system.load[0]
-        per_core = load / system.cores
-        if per_core >= HEALTH_LOAD_CRITICAL_PER_CORE:
+        reasons.append("Host metrics unavailable")
+    else:
+        if system.ram_percent >= HEALTH_RAM_CRITICAL_PERCENT:
             critical = True
-            reasons.append(
-                f"Load {load:.2f} is {per_core:.1f} per core, at or above {HEALTH_LOAD_CRITICAL_PER_CORE:.1f}"
-            )
-        elif per_core >= HEALTH_LOAD_WARNING_PER_CORE:
+            reasons.append(f"RAM {system.ram_percent:.1f}% used, at or above {HEALTH_RAM_CRITICAL_PERCENT:.0f}%")
+        elif system.ram_percent >= HEALTH_RAM_WARNING_PERCENT:
             warning = True
-            reasons.append(
-                f"Load {load:.2f} is {per_core:.1f} per core, at or above {HEALTH_LOAD_WARNING_PER_CORE:.1f}"
-            )
+            reasons.append(f"RAM {system.ram_percent:.1f}% used, at or above {HEALTH_RAM_WARNING_PERCENT:.0f}%")
+        if system.swap_percent >= HEALTH_SWAP_WARNING_PERCENT:
+            warning = True
+            reasons.append(f"Swap {system.swap_percent:.1f}% used, at or above {HEALTH_SWAP_WARNING_PERCENT:.0f}%")
+        if system.cores > 0:
+            load = system.load[0]
+            per_core = load / system.cores
+            if per_core >= HEALTH_LOAD_CRITICAL_PER_CORE:
+                critical = True
+                reasons.append(
+                    f"Load {load:.2f} is {per_core:.1f} per core, at or above {HEALTH_LOAD_CRITICAL_PER_CORE:.1f}"
+                )
+            elif per_core >= HEALTH_LOAD_WARNING_PER_CORE:
+                warning = True
+                reasons.append(
+                    f"Load {load:.2f} is {per_core:.1f} per core, at or above {HEALTH_LOAD_WARNING_PER_CORE:.1f}"
+                )
     return ("critical" if critical else "warning" if warning else "healthy", reasons)
 
 
-def _health_info(system: SystemInfo, ftl: FtlInfo, database: DatabaseInfo,
+def _health_info(system: SystemInfo | None, ftl: FtlInfo, database: DatabaseInfo,
                  sensors: SensorsInfo | None) -> dict[str, Any]:
     status, reasons = _health_status(system, sensors)
     return {
         "status": status, "reasons": reasons,
-        "host_uptime": system.uptime,
+        "host_uptime": None if system is None else system.uptime,
         "ftl_uptime": int(ftl.uptime_ms // 1000),
-        "memory": {"total": system.ram_total, "used": system.ram_used,
+        "memory": None if system is None else {"total": system.ram_total, "used": system.ram_used,
                    "available": system.ram_available, "percent": system.ram_percent},
-        "swap": {"total": system.swap_total, "used": system.swap_used, "percent": system.swap_percent},
-        "cpu": {"cores": system.cores, "percent": system.cpu_percent, "load": list(system.load)},
+        "swap": None if system is None else {"total": system.swap_total, "used": system.swap_used, "percent": system.swap_percent},
+        "cpu": None if system is None else {"cores": system.cores, "percent": system.cpu_percent, "load": list(system.load)},
         "temperature": None if sensors is None or sensors.cpu_temp is None else {
             "value": sensors.cpu_temp, "limit": sensors.hot_limit, "unit": sensors.unit,
         },
@@ -468,6 +472,9 @@ def _connection(instance: Instance, *, health: bool = False) -> tuple[
             if health:
                 try:
                     system = client.get_system_info()
+                except PiholeAPIError:
+                    system = None
+                try:
                     ftl = client.get_ftl_info()
                     database = client.get_database_info()
                     try:

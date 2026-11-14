@@ -91,8 +91,9 @@ These rules are the reason the project exists. Every feature follows them.
 - The server computes a status dot (healthy, warning, critical, or unavailable) from
   temperature against Pi-hole's `hot_limit`, RAM percent, swap percent, and 1-minute load
   per core.
-- A failed health read leaves the instance reachable and marks Health unavailable. Sensors
-  are optional.
+- A failed FTL or database read leaves the instance reachable and marks Health unavailable.
+  Sensors and host metrics are optional. Missing host metrics show as unavailable and raise
+  the status to warning.
 - Details sit in a collapsible row under each instance. Warning and critical rows open
   automatically and healthy rows start collapsed. A manual expand or collapse sticks for the
   rest of the session.

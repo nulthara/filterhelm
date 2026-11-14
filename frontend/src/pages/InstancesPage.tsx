@@ -4,6 +4,7 @@ import {
   Alert, App, Badge, Button, Descriptions, Dropdown, Empty, Flex, Form, Grid, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import type { DescriptionsProps, TableProps } from 'antd'
+import { healthDetailRows } from '../health'
 import { api, type Download, type FtlAction, type HealthStatus, type Instance, type InstanceHealth, type InstanceInput } from '../api'
 
 function saveDownload({ blob, filename }: Download): void {
@@ -59,26 +60,6 @@ const healthBadge: Record<HealthStatus, 'success' | 'warning' | 'error'> =
 const healthLabel: Record<HealthStatus, string> =
   { healthy: 'Healthy', warning: 'Warning', critical: 'Critical' }
 
-function formatDuration(seconds: number): string {
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor(seconds / 3600) % 24
-  const minutes = Math.floor(seconds / 60) % 60
-  if (days > 0) return `${days}d ${hours}h`
-  if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
-}
-
-function formatBytes(bytes: number): string {
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  let value = bytes
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`
-}
-
 interface HealthBadgeProps {
   health: InstanceHealth | null
 }
@@ -97,26 +78,9 @@ interface HealthDetailsProps {
 }
 
 function HealthDetails({ health }: HealthDetailsProps) {
-  const { host_uptime, ftl_uptime, memory, swap, cpu, temperature, ftl, database } = health
-  const { load, cores } = cpu
-  const temperatureLimit = temperature?.limit == null
-    ? 'no limit configured' : `limit ${temperature.limit.toFixed(0)} °${temperature.unit}`
-  const temperatureDisplay = temperature === null
-    ? 'Unavailable' : `${temperature.value.toFixed(0)} °${temperature.unit} (${temperatureLimit})`
-  const items: DescriptionsProps['items'] = [
-    { key: 'host_uptime', label: 'Host uptime', children: formatDuration(host_uptime) },
-    { key: 'ftl_uptime', label: 'FTL uptime', children: formatDuration(ftl_uptime) },
-    { key: 'load', label: 'Load', children: `${load.map((value) => value.toFixed(2)).join(' / ')} (${cores} cores)` },
-    { key: 'cpu', label: 'CPU', children: `${cpu.percent.toFixed(1)}%` },
-    { key: 'ram', label: 'RAM', children: `${memory.percent.toFixed(1)}% (${formatBytes(memory.used * 1024)} / ${formatBytes(memory.total * 1024)})` },
-    { key: 'ram_available', label: 'RAM available', children: formatBytes(memory.available * 1024) },
-    { key: 'swap', label: 'Swap', children: `${swap.percent.toFixed(1)}% (${formatBytes(swap.used * 1024)} / ${formatBytes(swap.total * 1024)})` },
-    { key: 'temperature', label: 'Temperature', children: temperatureDisplay },
-    { key: 'ftl_cpu', label: 'FTL CPU', children: `${ftl.cpu_percent.toFixed(1)}%` },
-    { key: 'ftl_memory', label: 'FTL memory', children: `${ftl.mem_percent.toFixed(1)}%` },
-    { key: 'database', label: 'Database', children: `${formatBytes(database.size)} · ${database.queries.toLocaleString()} queries` },
-    { key: 'sqlite', label: 'SQLite', children: database.sqlite_version },
-  ]
+  const items: DescriptionsProps['items'] = healthDetailRows(health).map(
+    ({ key, label, value }) => ({ key, label, children: value }),
+  )
   return (
     <Flex vertical gap="middle" className="health-details">
       {health.reasons.length > 0 && (

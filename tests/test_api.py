@@ -2020,7 +2020,7 @@ def test_instance_list_with_health_reads_inside_one_session_in_order(monkeypatch
     assert 'secret' not in repr(response)
 
 
-def test_health_failure_does_not_hide_healthy_connection(monkeypatch):
+def test_system_info_failure_keeps_other_health_rows(monkeypatch):
     setup_api(monkeypatch)
 
     class FailureClient(FakePiholeClient):
@@ -2032,9 +2032,13 @@ def test_health_failure_does_not_hide_healthy_connection(monkeypatch):
     row = api.instances_list(health=True)['instances'][0]
     assert row['status'] == 'success'
     assert row['versions'] is not None
-    assert row['health'] is None
-    assert row['status_detail'] == 'Reachable; health details unavailable'
-    assert FakePiholeClient.info_calls == ['system']
+    health = row['health']
+    assert all(health[key] is None for key in ('host_uptime', 'memory', 'swap', 'cpu'))
+    assert health['ftl_uptime'] == 432620
+    assert health['database']['size'] == 460140544
+    assert health['temperature'] == {'value': 57.0, 'limit': 60.0, 'unit': 'C'}
+    assert row['status_detail'] == 'Reachable'
+    assert FakePiholeClient.info_calls == ['system', 'ftl', 'database', 'sensors']
 
 
 def test_health_and_version_failures_both_append_detail(monkeypatch):
@@ -2044,7 +2048,7 @@ def test_health_and_version_failures_both_append_detail(monkeypatch):
         def get_versions(self):
             raise PiholeAPIError('unavailable')
 
-        def get_system_info(self):
+        def get_ftl_info(self):
             raise PiholeAPIError('unavailable')
 
     monkeypatch.setattr(api, 'PiholeClient', FailureClient)
@@ -2983,3 +2987,24 @@ def test_adlist_add_with_groups_resolves_per_instance(monkeypatch):
 
 def test_adlist_add_missing_group_fails_only_that_instance(monkeypatch):
     _assert_adlist_add_groups(monkeypatch, True)
+
+
+def test_health_status_without_system_warns():
+    assert api._health_status(None, None) == ("warning", ["Host metrics unavailable"])
+
+
+def test_health_status_without_system_keeps_temperature():
+    assert api._health_status(None, SensorsInfo(61.0, 60.0, 'C')) == ("critical", [
+        "Temperature 61 °C is at or above the 60 °C limit", "Host metrics unavailable",
+    ])
+
+
+def test_health_info_without_system_nulls_host_fields():
+    health = api._health_info(None, FakePiholeClient.ftl_info, FakePiholeClient.database_info, None)
+    assert health == {
+        'status': 'warning', 'reasons': ['Host metrics unavailable'],
+        'host_uptime': None, 'memory': None, 'swap': None, 'cpu': None,
+        'ftl_uptime': 432620, 'temperature': None,
+        'ftl': {'cpu_percent': 0.02500000037252903, 'mem_percent': 1.4299392700195312},
+        'database': {'size': 460140544, 'queries': 2636298, 'sqlite_version': '3.53.1'},
+    }

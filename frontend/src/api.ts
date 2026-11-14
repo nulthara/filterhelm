@@ -111,11 +111,11 @@ export type HealthStatus = 'healthy' | 'warning' | 'critical'
 export interface InstanceHealth {
   status: HealthStatus
   reasons: string[]
-  host_uptime: number
+  host_uptime: number | null
   ftl_uptime: number
-  memory: HealthMemory
-  swap: HealthSwap
-  cpu: HealthCpu
+  memory: HealthMemory | null
+  swap: HealthSwap | null
+  cpu: HealthCpu | null
   temperature: HealthTemperature | null
   ftl: HealthFtl
   database: HealthDatabase

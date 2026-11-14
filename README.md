@@ -310,6 +310,8 @@ column reads `/api/info/system`, `/api/info/ftl`, `/api/info/database`, and
 | Warning | within 5° of Pi-hole's limit | 80% | 50% | 1 per core |
 | Critical | at Pi-hole's limit | 95% | — | 2 per core |
 
+If `/api/info/system` fails, the host rows read Unavailable and the status is at least Warning.
+
 **Status.** Pauses blocking on one instance or several for 10 seconds, 30 seconds,
 5 minutes, or indefinitely, and resumes it at any time. Multi-instance changes run one
 instance at a time. If some instances fail, the page reports which ones and keeps the
