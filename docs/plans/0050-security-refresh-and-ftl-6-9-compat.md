@@ -1,6 +1,6 @@
 # 0050 — Security refresh, FTL 6.9 compatibility, release 1.0.5
 
-Status: in-review            <!-- draft | approved | in-progress | in-review | shipped -->
+Status: shipped            <!-- draft | approved | in-progress | in-review | shipped -->
 Branch: feature/0050-security-refresh-and-ftl-6-9-compat
 Author: Claude (architect)
 Date: 2026-11-13
